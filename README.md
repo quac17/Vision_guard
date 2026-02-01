@@ -7,7 +7,7 @@
 ---
 
 ## Tính năng chính
--  **Xác thực sinh trắc học:** Nhận diện khuôn mặt học sinh cực nhanh (1-2 giây).
+-  **Xác thực sinh trắc học:** Nhận diện khuôn mặt học sinh cực nhanh (3-4 giây).
 -  **Xử lý tại biên (Edge Processing):** Toàn bộ khâu chụp ảnh, khử nhiễu và nhận diện chạy trực tiếp trên Pi 4.
 -  **Thông báo thời gian thực:** Tự động gửi Email/Thông báo cho phụ huynh ngay khi trẻ lên hoặc xuống xe.
 -  **Quản lý tập trung:** Giao diện Web hiện đại để quản lý danh sách học sinh và theo dõi hành trình.
@@ -31,12 +31,12 @@ smart-bus-system/
 ---
 
 ## Công nghệ sử dụng
-- **Phần cứng:** Raspberry Pi 4 (8GB RAM), Pi Camera Module V2, Nút bấm vật lý.
-- **Ngôn ngữ:** Python (Edge & AI), JavaScript (Frontend & Backend).
+- **Phần cứng:** Raspberry Pi 4 (8GB RAM), Camera Logitech C270, Nút bấm vật lý.
+- **Ngôn ngữ:** Python (Edge & AI & Backend), JavaScript (Frontend).
 - **AI/ML:** OpenCV, Dlib hoặc TensorFlow Lite.
-- **Backend:** Node.js (Express) hoặc Python (FastAPI/Flask).
+- **Backend:** Python (FastAPI).
 - **Database:** MongoDB hoặc PostgreSQL.
-- **Giao tiếp:** REST API hoặc MQTT.
+- **Giao tiếp:** REST API.
 
 ---
 
@@ -54,8 +54,8 @@ python hardware-control/main.py
 ### 2. Khởi chạy Backend Server
 ```bash
 cd backend-server
-npm install
-npm start
+pip install -r requirements.txt
+python main.py
 ```
 
 ### 3. Khởi chạy Web UI
@@ -69,7 +69,7 @@ npm run dev
 
 ## Luồng hoạt động (Workflow)
 1. **Học sinh lên xe:** Nhấn nút vật lý trên thiết bị.
-2. **Chụp ảnh:** Camera chụp và xử lý ảnh (khử nhiễu, chuẩn hóa $640 \times 480$ px).
+2. **Chụp ảnh:** Camera chụp và xử lý ảnh (khử nhiễu, chuẩn hóa).
 3. **Nhận diện:** Engine AI so khớp với cơ sở dữ liệu khuôn mặt cục bộ trên Pi.
 4. **Gửi dữ liệu:** Kết quả nhận diện được gửi về Backend qua API.
 5. **Thông báo:** Server ghi nhận lịch sử và gửi mail thông báo tức thì cho phụ huynh.
@@ -78,8 +78,6 @@ npm run dev
 
 ## Liên hệ
 - **Dự án:** VisionGuard Bus
-- **Người phát triển:** [Tên của bạn]
-- **Email:** [Email của bạn]
 
 ---
 
