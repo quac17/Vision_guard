@@ -1,0 +1,31 @@
+smart-bus-system/
+├── edge-device-pi4/            # Toàn bộ code chạy trên Raspberry Pi 4
+│   ├── hardware-control/       # Folder 1: Điều khiển Camera & Nút bấm
+│   │   ├── main.py             # Script chính xử lý sự kiện nút bấm & camera
+│   │   ├── camera_utils.py     # Hàm chụp ảnh, cấu hình thông số cam
+│   │   ├── image_processor.py  # Xử lý nhiễu, resize ảnh
+│   │   └── captured_frames/    # Thư mục tạm chứa ảnh sau xử lý (Output)
+│   ├── ai-recognition/         # Folder 2: Nhận diện khuôn mặt & Logic AI
+│   │   ├── recognizer.py       # Script lấy ảnh từ captured_frames và nhận diện
+│   │   ├── models/             # Lưu file model (.h5, .tflite, .pkl)
+│   │   ├── local_db/           # Database cục bộ hoặc file chứa thông tin học sinh
+│   │   └── api_client.py       # Gửi kết quả nhận diện về Server
+│   └── config.yaml             # Cấu hình chung cho Pi (API Key, Device ID)
+│
+├── backend-server/             # Folder 3: BE Server (Node.js, Python, v.v.)
+│   ├── src/
+│   │   ├── controllers/        # Xử lý logic (Nhận data từ Pi, gửi Mail)
+│   │   ├── routes/             # Định nghĩa các API endpoints
+│   │   ├── services/           # Logic gửi Email, Sync dữ liệu xuống Pi
+│   │   └── models/             # Schema Database (Học sinh, Phụ huynh, Lịch sử)
+│   ├── uploads/                # Lưu trữ ảnh học sinh gốc từ UI
+│   └── .env                    # Biến môi trường (Email config, DB URL)
+│
+├── frontend-web/               # Folder 4: UI Web (React, Vue, hoặc HTML/CSS)
+│   ├── src/
+│   │   ├── components/         # Giao diện đăng ký, bảng điều khiển
+│   │   ├── pages/              # Trang chủ, Trang đăng ký học sinh
+│   │   └── services/           # Gọi API đến Backend
+│   └── public/
+│
+└── docs/                       # Tài liệu hướng dẫn lắp đặt và sơ đồ hệ thống
