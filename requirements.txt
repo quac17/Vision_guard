@@ -1,3 +1,10 @@
 opencv-python
 numpy
 RPi.GPIO
+fastapi
+uvicorn
+requests
+PyYAML
+python-dotenv
+face-recognition
+pillow
