@@ -12,7 +12,16 @@ Hệ thống quản lý điểm danh học sinh trên xe buýt trường học s
 ## Cài đặt và Chạy
 
 ### 1. Chuẩn bị
-Tạo file `.env` từ mẫu trong thư mục (đã được tạo sẵn với các giá trị mặc định). Lưu ý cấu hình SMTP nếu muốn gửi email thật.
+Tạo file `.env.local` và điền các giá trị cấu hình cần thiết (SMTP, Database, Secret Key). Sau đó chạy câu lệnh sau để copy sang file `.env`:
+
+```bash
+# Windows (PowerShell)
+cp .env.local .env
+
+# Linux/macOS
+cp .env.local .env
+```
+Lưu ý cấu hình SMTP nếu muốn gửi email thật.
 
 ### 2. Chạy với Docker (Khuyên dùng)
 
