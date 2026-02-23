@@ -1,8 +1,8 @@
-# VisionGuard: Hệ thống Nhận diện Khuôn mặt Điểm danh Thông minh
+# VisionGuard bus: Hệ thống Nhận diện Khuôn mặt Điểm danh Thông minh trong xe bus
 ---
 
 ## 🌟 Giới thiệu
-**VisionGuard** là giải pháp điểm danh thông minh ứng dụng công nghệ nhận diện khuôn mặt tiên tiến. Hệ thống được thiết kế theo mô hình **Edge Computing**, kết hợp giữa sức mạnh xử lý của PC Server để trích xuất dữ liệu và khả năng vận hành thực tế tối ưu trên **Raspberry Pi 4**.
+**VisionGuard bus** là giải pháp điểm danh thông minh ứng dụng công nghệ nhận diện khuôn mặt tiên tiến. Hệ thống được thiết kế theo mô hình **Edge Computing**, kết hợp giữa sức mạnh xử lý của PC Server để trích xuất dữ liệu và khả năng vận hành thực tế tối ưu trên **Raspberry Pi 4**.
 
 ---
 
@@ -109,4 +109,4 @@ Vision_guard/
 - **Euclidean Threshold:** Mặc định là **1.0**. Có thể điều chỉnh trong `recognizer.py` tùy theo điều kiện ánh sáng thực tế.
 
 ---
-*Dự án phát triển bởi sự an toàn và tiện lợi.*
+*Dự án phát triển bởi sự an toàn và tiện lợi cho trẻ em.*
