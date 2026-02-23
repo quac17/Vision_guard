@@ -1,85 +1,112 @@
-# VisionGuard Bus: Smart AI Attendance System
+# VisionGuard: Hệ thống Nhận diện Khuôn mặt Điểm danh Thông minh
 ---
 
-## Giới thiệu
-**VisionGuard Bus** là hệ thống điểm danh học sinh thông minh trên xe bus trường học sử dụng công nghệ nhận diện khuôn mặt. Hệ thống tích hợp thiết bị đầu cuối (**Edge Computing**) trên Raspberry Pi 4 để đảm bảo tính thời gian thực, giảm độ trễ và tăng cường bảo mật thông tin.
-
----
-
-## Tính năng chính
--  **Xác thực sinh trắc học:** Nhận diện khuôn mặt học sinh cực nhanh (3-4 giây).
--  **Xử lý tại biên (Edge Processing):** Toàn bộ khâu chụp ảnh, khử nhiễu và nhận diện chạy trực tiếp trên Pi 4.
--  **Thông báo thời gian thực:** Tự động gửi Email/Thông báo cho phụ huynh ngay khi trẻ lên hoặc xuống xe.
--  **Quản lý tập trung:** Giao diện Web hiện đại để quản lý danh sách học sinh và theo dõi hành trình.
--  **Đồng bộ hóa:** Tự động đồng bộ dữ liệu khuôn mặt và cấu hình từ Server xuống thiết bị đầu cuối.
+## 🌟 Giới thiệu
+**VisionGuard** là giải pháp điểm danh thông minh ứng dụng công nghệ nhận diện khuôn mặt tiên tiến. Hệ thống được thiết kế theo mô hình **Edge Computing**, kết hợp giữa sức mạnh xử lý của PC Server để trích xuất dữ liệu và khả năng vận hành thực tế tối ưu trên **Raspberry Pi 4**.
 
 ---
 
-## Cấu trúc dự án
+## 🏗️ Kiến trúc Hệ thống
+
+Dự án được chia thành các phân vùng chính:
+
+### 1. Phân vùng PC Server (`face-recognizer-server`)
+Đóng vai trò là "Trung tâm xử lý dữ liệu", thực hiện các nhiệm vụ:
+- **Chuẩn hóa dữ liệu:** Chuyển đổi hàng loạt ảnh từ nhiều định dạng (.pgm, .jpg, .png) sang `.webp` để tối ưu dung lượng.
+- **Trích xuất đặc trưng (Feature Extraction):** Sử dụng mô hình **MobileFaceNet** (PyTorch) để biến đổi khuôn mặt thành vector đặc trưng **512 chiều**.
+- **Đóng gói Database:** Lưu trữ kết quả dưới dạng file `face_embeddings.json`.
+
+### 2. Phân vùng Edge Device (`edge-device-pi4`)
+Chạy trực tiếp trên Raspberry Pi 4 để nhận diện thời gian thực:
+- **Xử lý phần cứng:** Điều khiển Camera, quản lý vòng lặp sự kiện (nhấn phím Space để điểm danh).
+- **Tiền xử lý ảnh:** Khử nhiễu (Gaussian Blur), Resize, và chuẩn hóa ảnh.
+- **Nhận diện AI:** Sử dụng **TFLite** để chạy model MobileFaceNet nhẹ, so khớp danh tính bằng khoảng cách **Euclidean**.
+
+### 3. Phân vùng Backend & Web (`backend-server` & `frontend-web`)
+- **Backend:** FastAPI cung cấp API quản lý tập trung, lưu trữ lịch sử và gửi thông báo.
+- **Frontend:** Giao diện Dashboard để quản lý danh sách học sinh và theo dõi điểm danh.
+
+---
+
+## 🔄 Luồng hoạt động (Workflows)
+
+### 💻 1. Luồng tại Server Face Recognition (PC Side)
+Quy trình chuẩn bị "Bộ não" cho hệ thống:
+1.  **Input Data:** Thu thập ảnh khuôn mặt vào thư mục `data` (chia theo Id/Tên người dùng).
+2.  **Conversion:** Chạy `conver_data.py` để chuyển tất cả sang `.webp` chất lượng cao, giảm tải cho Pi.
+3.  **Extraction:** Chạy `extract_embeddings.py`.
+    - Tải model **MobileFaceNet**.
+    - Phát hiện khuôn mặt bằng Haar Cascade.
+    - Trích xuất vector 512 chiều cho từng ảnh.
+    - Tính toán **Centroid** (vector trung bình) cho mỗi người để tăng độ ổn định.
+4.  **Export:** Đóng gói toàn bộ vào `face_embeddings.json`.
+
+### 🍓 2. Luồng tại Thiết bị Edge (Raspberry Pi 4)
+Quy trình nhận diện tại hiện trường:
+1.  **Trigger:** Người dùng nhấn nút vật lý hoặc phím **Space** trên Terminal.
+2.  **Capture:** Camera chụp liên tục 3-5 frame ảnh gốc.
+3.  **Pre-process:** 
+    - Chuyển sang ảnh màu RGB.
+    - Khử nhiễu bằng Gaussian Blur (3x3).
+    - Resize về chuẩn **112x112**.
+4.  **AI Inference:** 
+    - Tải model TFLite.
+    - Trích xuất vector đặc trưng 512 chiều từ các frame đã chụp.
+5.  **Strict Verification:** 
+    - So khớp khoảng cách **Euclidean** với Database.
+    - **Điều kiện:** TẤT CẢ các frame trong đợt chụp phải đều nằm trong ngưỡng (threshold) mới xác nhận danh tính.
+6.  **Action:** In kết quả lên màn hình, log lịch sử và dọn dẹp bộ nhớ ảnh tạm.
+
+---
+
+## � Danh sách API Backend Server
+
+Backend (FastAPI) lắng nghe tại port `8000`. Dưới đây là các đầu việc chính:
+
+### 🔐 Authentication
+- `POST /auth/login`: Đăng nhập hệ thống (Admin/Phụ huynh).
+
+### 👮 Admin Management
+- `POST /admin/parents`: Tạo tài khoản cho phụ huynh.
+- `GET /admin/students`: Lấy danh sách toàn bộ học sinh.
+- `POST /admin/students`: Thêm học sinh mới (Id, Tên, Mã số).
+- `PUT /admin/students/{id}`: Cập nhật thông tin học sinh.
+- `DELETE /admin/students/{id}`: Xóa học sinh khỏi hệ thống.
+
+### 🚌 Edge Communication (Điểm danh)
+- `POST /edge/attendance`: Nhận kết quả điểm danh từ Pi 4 gửi về. 
+    - *Body*: `{student_code, status, attendance_time}`
+
+### 👨‍👩‍👧‍👦 Parent Access
+- `GET /parent/history`: Xem lịch sử điểm danh của con em mình.
+
+---
+
+## 📂 Cấu trúc dự án
 
 ```text
-smart-bus-system/
-├── edge-device-pi4/      # Code chạy trên Raspberry Pi 4
-│   ├── hardware-control/ # Điều khiển Camera & Nút bấm, tiền xử lý ảnh
-│   ├── ai-recognition/   # Engine nhận diện khuôn mặt & Logic AI
-│   └── config.yaml       # Cấu hình thiết bị
-├── backend-server/       # Hệ thống API quản lý trung tâm (Node.js/Python)
-├── frontend-web/        # Dashboard quản lý (React/Vue)
-└── docs/                # Tài liệu kỹ thuật & Sơ đồ hệ thống
+Vision_guard/
+├── face-recognizer-server/       # Xử lý tại PC (Server Side)
+├── edge-device-pi4/              # Chạy trên Raspberry Pi 4 (Edge Side)
+│   ├── hardware-control/         # Điều khiển Camera & Tiền xử lý
+│   └── ai-recognition/           # Engine nhận diện & Database Local
+├── backend-server/               # Hệ thống API quản lý trung tâm
+└── frontend-web/                 # Dashboard quản lý Web
 ```
 
 ---
 
-## Công nghệ sử dụng
-- **Phần cứng:** Raspberry Pi 4 (8GB RAM), Camera Logitech C270, Nút bấm vật lý.
-- **Ngôn ngữ:** Python (Edge & AI & Backend), JavaScript (Frontend).
-- **AI/ML:** OpenCV, Dlib hoặc TensorFlow Lite.
-- **Backend:** Python (FastAPI).
-- **Database:** MongoDB hoặc PostgreSQL.
-- **Giao tiếp:** REST API.
+## 🚀 Thao tác thực hiện nhanh
+
+1.  **PC**: Chạy `conver_data.py` và `extract_embeddings.py` để lấy file JSON.
+2.  **Đồng bộ**: Copy `face_embeddings.json` vào `edge-device-pi4/ai-recognition/local_db/`.
+3.  **Pi 4**: Cài `tflite-runtime` và chạy `python hardware-control/main.py`.
 
 ---
 
-## Hướng dẫn cài đặt nhanh
-
-### 1. Cấu hình Raspberry Pi 4
-```bash
-cd edge-device-pi4
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-python hardware-control/main.py
-```
-
-### 2. Khởi chạy Backend Server
-```bash
-cd backend-server
-pip install -r requirements.txt
-python main.py
-```
-
-### 3. Khởi chạy Web UI
-```bash
-cd frontend-web
-npm install
-npm run dev
-```
+## ⚠️ Giải thích Kỹ thuật bổ sung
+- **Công thức chuẩn hóa:** $(x - 127.5) / 127.5$ được áp dụng đồng nhất ở cả hai phía để đảm bảo vector không bị sai lệch.
+- **Euclidean Threshold:** Mặc định là **1.0**. Có thể điều chỉnh trong `recognizer.py` tùy theo điều kiện ánh sáng thực tế.
 
 ---
-
-## Luồng hoạt động (Workflow)
-1. **Học sinh lên xe:** Nhấn nút vật lý trên thiết bị.
-2. **Chụp ảnh:** Camera chụp và xử lý ảnh (khử nhiễu, chuẩn hóa).
-3. **Nhận diện:** Engine AI so khớp với cơ sở dữ liệu khuôn mặt cục bộ trên Pi.
-4. **Gửi dữ liệu:** Kết quả nhận diện được gửi về Backend qua API.
-5. **Thông báo:** Server ghi nhận lịch sử và gửi mail thông báo tức thì cho phụ huynh.
-
----
-
-## Liên hệ
-- **Dự án:** VisionGuard Bus
-
----
-
-Dự án này được phát triển vì sự an toàn của trẻ em.
-Và sự an tâm của phụ huynh & nhà trường.
+*Dự án phát triển bởi sự an toàn và tiện lợi.*

@@ -1,0 +1,24 @@
+1. Kiến trúc phần mềm trên Pi 4
+Để chạy mượt mà trên CPU ARM, hệ thống không chạy toàn bộ các thư viện nặng của PC mà sử dụng các phiên bản rút gọn:
+
+Engine: OpenCV (bản dnn hoặc contrib) phối hợp với TFLite (TensorFlow Lite) để chạy model MobileFaceNet.
+
+Database Loader: Một hàm Python đơn giản để load file .json từ PC vào RAM ngay khi khởi động.
+
+Input: folder hardware-control/dataset/processed, sau khi thực hiện nhận diện sẽ log data và xóa các ảnh trong thư mục đích
+
+2. Quy trình xử lý (Pipeline) thời gian thực
+Quy trình này thực hiện khi có ảnh được chụp mới từ folder hardware-control/dataset/processed
+
+Bước 1: Face Detection (Haar Cascades / Ultra-Light)
+Sử dụng bộ lọc Haar Cascades (có sẵn trong OpenCV) để tìm vùng chứa khuôn mặt (Bounding Box). Đây là thuật toán cực nhẹ, phù hợp nhất cho CPU của Pi 4.
+
+Nếu phát hiện thấy mặt, hệ thống mới bắt đầu cắt vùng ảnh đó (Crop) để chuyển sang bước sau. Nếu không thấy mặt, hệ thống bỏ qua frame đó để tiết kiệm điện năng.
+
+Bước 2: Pre-processing & Feature Extraction (MobileFaceNet TFLite)
+Vùng khuôn mặt được cắt ra sẽ được chuyển sang định dạng .webp (hoặc mảng NumPy tương đương) và resize về đúng 112x112.
+
+Chạy model MobileFaceNet (TFLite version) để tạo ra một vector 512 chiều mới từ camera. (nhiều frame sẽ tạo ra vector trung bình)
+
+Bước 3: So khớp euclid distance với ngưỡng 1 (Distance Matching) 
+Nếu có nhiều hơn 1 sample thì cần tất cả các sample đều đạt ngưỡng

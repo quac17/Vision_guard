@@ -1,0 +1,35 @@
+1.Quy trình trích xuất đặc trưng (The Pipeline)
+Quy trình này biến dữ liệu hình ảnh thô thành các con số toán học thông qua 4 bước chính:
+
+Bước A: Đọc và Tiền xử lý (Preprocessing)
+Đọc file WebP: Sử dụng thư viện Pillow hoặc OpenCV để load ảnh.
+
+Chuẩn hóa (Normalization): Đưa ảnh về kích thước chuẩn mà MobileFaceNet yêu cầu (thường là 112x112 pixels).
+
+Cân bằng trắng/Ánh sáng: Áp dụng các thuật toán làm đều độ sáng để giảm thiểu sai số do môi trường chụp ảnh khác nhau.
+
+Bước B: Phát hiện & Căn chỉnh (Detection & Alignment)
+Sử dụng MTCNN hoặc Face_recognition (HOG/CNN) trên PC để tìm tọa độ khuôn mặt.
+
+Alignment: Đây là bước quan trọng. Hệ thống sẽ xoay và căn chỉnh khuôn mặt sao cho hai mắt nằm trên một đường thẳng ngang. Điều này giúp MobileFaceNet tạo ra vector 512 chiều có độ ổn định cao nhất.
+
+Bước C: Trích xuất bằng MobileFaceNet (Deep Learning Inference)
+Đưa ảnh đã căn chỉnh qua model MobileFaceNet (đã pre-trained).
+
+Model sẽ thực hiện các phép toán tích chập (Convolution) để tạo ra một Vector 512 chiều. Mỗi con số trong vector này đại diện cho một đặc điểm trừu tượng (khoảng cách mắt, độ cao mũi, góc hàm, v.v.).
+
+2. Kiến trúc đóng gói dữ liệu (Output Packaging)
+Thay vì lưu từng ảnh, ta gom tất cả vào một cấu trúc dữ liệu duy nhất trong file .json.
+
+Tính toán giá trị trung bình (Centroid): Nếu một người có 10 ảnh mẫu, thay vì lưu cả 10 vector, PC có thể tính trung bình cộng để tạo ra 1 Vector đại diện duy nhất. Điều này giúp Pi 4 so sánh cực nhanh vì chỉ phải đối chiếu 1 lần/người.
+
+Cấu trúc file JSON:
+
+JSON
+{
+  "metadata": {"model": "MobileFaceNet", "dimension": 512},
+  "data": {
+    "NguyenVanA": [0.12, -0.05, ..., 0.88],
+    "TranThiB": [0.45, 0.21, ..., -0.12]
+  }
+}

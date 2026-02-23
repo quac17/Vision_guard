@@ -1,31 +1,24 @@
-smart-bus-system/
-├── edge-device-pi4/            # Toàn bộ code chạy trên Raspberry Pi 4
-│   ├── hardware-control/       # Folder 1: Điều khiển Camera & Nút bấm
-│   │   ├── main.py             # Script chính xử lý sự kiện nút bấm & camera
-│   │   ├── camera_utils.py     # Hàm chụp ảnh, cấu hình thông số cam
-│   │   ├── image_processor.py  # Xử lý nhiễu, resize ảnh
-│   │   └── captured_frames/    # Thư mục tạm chứa ảnh sau xử lý (Output)
-│   ├── ai-recognition/         # Folder 2: Nhận diện khuôn mặt & Logic AI
-│   │   ├── recognizer.py       # Script lấy ảnh từ captured_frames và nhận diện
-│   │   ├── models/             # Lưu file model (.h5, .tflite, .pkl)
-│   │   ├── local_db/           # Database cục bộ hoặc file chứa thông tin học sinh
-│   │   └── api_client.py       # Gửi kết quả nhận diện về Server
-│   └── config.yaml             # Cấu hình chung cho Pi (API Key, Device ID)
+Vision_guard/
+├── edge-device-pi4/              # Toàn bộ code chạy trên Raspberry Pi 4 (Edge Side)
+│   ├── hardware-control/         # Folder 1: Điều khiển Camera & Tiền xử lý
+│   │   ├── main.py               # Script chính khởi chạy vòng lặp sự kiện
+│   │   ├── camera_utils.py       # Hàm chụp ảnh (Webcam/PiCam), cấu hình WebP
+│   │   └── image_processor.py    # Xử lý khử nhiễu (Gaussian), Resize 112x112
+│   ├── ai-recognition/           # Folder 2: Nhận diện khuôn mặt & Logic AI
+│   │   ├── recognizer.py         # Engine so khớp Euclidean & TFLite Interpreter
+│   │   ├── models/               # Lưu file model .tflite
+│   │   ├── local_db/             # Lưu trữ face_embeddings.json (Vector DB)
+│   │   └── api_client.py         # (Tùy chọn) Gửi kết quả về Backend Cloud
+│   └── config.yaml               # Cấu hình chung cho thiết bị
 │
-├── backend-server/             # Folder 3: BE Server (Node.js, Python, v.v.)
-│   ├── src/
-│   │   ├── controllers/        # Xử lý logic (Nhận data từ Pi, gửi Mail)
-│   │   ├── routes/             # Định nghĩa các API endpoints
-│   │   ├── services/           # Logic gửi Email, Sync dữ liệu xuống Pi
-│   │   └── models/             # Schema Database (Học sinh, Phụ huynh, Lịch sử)
-│   ├── uploads/                # Lưu trữ ảnh học sinh gốc từ UI
-│   └── .env                    # Biến môi trường (Email config, DB URL)
+├── face-recognizer-server/       # Xử lý dữ liệu tại PC (Server Side/Training)
+│   ├── conver_data.py            # Script chuẩn hóa dữ liệu ảnh sang WebP
+│   ├── extract_embeddings.py     # Script trích xuất vector 512 chiều (PyTorch)
+│   ├── mobilefacenet.py          # Định nghĩa kiến trúc mạng MobileFaceNet
+│   ├── face_embeddings.json      # Kết quả đầu ra (Database vector)
+│   └── data-convert/             # Folder chứa tập data đã chuẩn hóa
 │
-├── frontend-web/               # Folder 4: UI Web (React, Vue, hoặc HTML/CSS)
-│   ├── src/
-│   │   ├── components/         # Giao diện đăng ký, bảng điều khiển
-│   │   ├── pages/              # Trang chủ, Trang đăng ký học sinh
-│   │   └── services/           # Gọi API đến Backend
-│   └── public/
-│
-└── docs/                       # Tài liệu hướng dẫn lắp đặt và sơ đồ hệ thống
+├── backend-server/               # Backend quản lý (FastAPI)
+├── frontend-web/                 # Dashboard theo dõi & quản lý học sinh
+├── requirements.txt              # Các thư viện Python cần thiết
+└── README.md                     # Tài liệu hướng dẫn chi tiết
