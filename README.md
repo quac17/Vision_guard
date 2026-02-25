@@ -110,3 +110,28 @@ Vision_guard/
 
 ---
 *Dự án phát triển bởi sự an toàn và tiện lợi cho trẻ em.*
+
+## 📊 Kết quả thực nghiệm (Experimental Results)
+
+Hệ thống đã được đánh giá hiệu năng và độ chính xác dựa trên bộ dữ liệu thực tế:
+- **Dữ liệu huấn luyện (Train):** 33 đối tượng, mỗi đối tượng 8 hình ảnh (Tổng cộng 264 ảnh).
+- **Dữ liệu kiểm thử (Test):** 36 đối tượng, mỗi đối tượng 2 hình ảnh (Tổng cộng 72 ảnh).
+
+### 1. Thông số Cơ sở dữ liệu (Database Stats)
+| Thông số | Giá trị | Ý nghĩa |
+| :--- | :--- | :--- |
+| **Total Identities** | 33 | Tổng số danh tính (học sinh) đã được trích xuất và lưu trong DB. |
+| **Embedding Dimension** | 512 | Số chiều của vector đặc trưng khuôn mặt, đảm bảo độ phân biệt cao. |
+| **DB File Size** | 479.39 KB | Dung lượng file lưu trữ vector, cực kỳ nhẹ cho thiết bị Edge. |
+
+### 2. Hiệu năng Hệ thống (System Metrics)
+| Thông số | Giá trị | Ý nghĩa |
+| :--- | :--- | :--- |
+| **Train/Test Data Size** | 0.97 MB / 0.32 MB | Tổng dung lượng ảnh đầu vào sau khi đã tối ưu (.webp). |
+| **Model Size** | ~ 3 MB | Kích thước của mô hình AI (MobileFaceNet bộ lọc nhẹ). |
+| **CPU Usage** | 8.8 % | Mức độ sử dụng chip xử lý trung bình khi vận hành. |
+| **RAM Usage** | 51.2 % | Mức độ chiếm dụng bộ nhớ tạm của hệ thống. |
+| **Inference Latency PC** | 17.22 ms | Thời gian mô hình AI đưa ra kết quả nhận diện (rất nhanh). |
+| **Preprocessing Time** | 1.27 ms | Thời gian xử lý ảnh thô trước khi đưa vào AI. |
+
+*Lưu ý: Các thông số hiệu năng trên được đo đạc trong môi trường giả lập PC (8GB RAM, i5-12400F max 2.5Ghz) để đảm bảo tính ổn định của thuật toán trước khi triển khai thực tế trên Raspberry Pi 4 (4GB RAM, 1.5Ghz).*

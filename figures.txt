@@ -1,0 +1,75 @@
+# DANH SÁCH CÁC THÔNG SỐ VÀ HÌNH ẢNH CẦN THU THẬP CHO ĐỒ ÁN (VISION GUARD BUS)
+
+Dưới đây là các thông số kỹ thuật (KPIs) và hình ảnh minh họa quan trọng cần có trong báo cáo đồ án để chứng minh tính hiệu quả và độ ổn định của hệ thống.
+
+---
+
+## 1. Thông số Hiệu năng AI (AI Performance)
+
+- **Thời gian Inference (Inference Latency):**
+  - *Mô tả:* Thời gian trung bình để model MobileFaceNet trích xuất 1 vector đặc trưng (512-dim).
+  - *So sánh:* PC (PyTorch) vs Raspberry Pi 4 (TFLite).
+  - *Cách thu thập:* Sử dụng thư viện `time` bao quanh hàm `interpreter.invoke()` trên Pi và model forward trên PC. Chạy 100 lần và lấy trung bình.
+
+- **Kích thước Model (Model Footprint):**
+  - *Mô tả:* Dung lượng file .pth (gốc) và file .tflite (sau khi chuyển đổi/quantize).
+  - *Cách thu thập:* `os.path.getsize()`.
+
+- **Ngưỡng so khớp tối ưu (Optimal Threshold):**
+  - *Mô tả:* Biểu đồ thể hiện khoảng cách Euclidean. 
+  - *Hình ảnh:* Histogram khoảng cách giữa các cặp ảnh cùng một người (Intra-class) và khác người (Inter-class). Điểm giao nhau chính là ngưỡng (Threshold) tối ưu (dự án đang dùng 1.0).
+
+---
+
+## 2. Thông số Độ chính xác (Accuracy Metrics)
+
+- **Ma trận nhầm lẫn (Confusion Matrix):**
+  - *Mô tả:* Thể hiện khả năng nhận diện đúng/sai cho từng học sinh trong tập test.
+  - *Cách thu thập:* Chạy nhận diện trên một tập data test (không có trong data training) và đếm số lần True Positive, False Positive.
+
+- **Tỷ lệ FAR (False Acceptance Rate) và FRR (False Rejection Rate):**
+  - *Mô tả:* Tỷ lệ nhận nhầm người lạ và tỷ lệ từ chối người quen.
+  - *Cách thu thập:* Thử nghiệm với người không có trong database và người có trong database với các góc chụp khác nhau.
+
+---
+
+## 3. Thông số Tối ưu hóa Dữ liệu (Data Optimization)
+
+- **Hiệu quả nén ảnh (Storage Efficiency):**
+  - *Mô tả:* So sánh dung lượng bộ dữ liệu ảnh gốc (.pgm, .jpg) so với sau khi chuyển sang .webp.
+  - *Hình ảnh:* Biểu đồ cột thể hiện "Original Size" vs "Optimized Size".
+
+- **Kích thước Database local (JSON size):**
+  - *Mô tả:* Tốc độ tăng trưởng của file `face_embeddings.json` khi số lượng học sinh tăng lên (ví dụ: 10, 50, 100 người).
+
+---
+
+## 4. Thông số Tài nguyên Thiết bị Edge (System Resources on Pi 4)
+
+- **Mức chiếm dụng CPU & RAM:**
+  - *Mô tả:* CPU/RAM khi ở trạng thái chờ và khi đang xử lý nhận diện AI.
+  - *Cách thu thập:* Lệnh `top` hoặc thư viện `psutil` trong Python trên Raspberry Pi.
+
+- **Thời gian Tiền xử lý (Pre-processing Time):**
+  - *Mô tả:* Thời gian thực hiện Gaussian Blur, Gray scaling và Resize ảnh chuẩn bị cho AI.
+  - *Cách thu thập:* Log lại thời gian bắt đầu và kết thúc giai đoạn `Pre-process` trong `hardware-control/main.py`.
+
+---
+
+## 5. Thông số Hệ thống Tổng thể (End-to-End Performance)
+
+- **Thời gian điểm danh tổng thể (Latency):**
+  - *Mô tả:* Từ lúc nhấn phím Space -> Chụp ảnh -> AI xử lý -> Hiển thị kết quả. (Mục tiêu: < 2 giây).
+
+- **Độ trễ API (API Round-trip Time):**
+  - *Mô tả:* Thời gian gửi kết quả từ Pi về Backend Server và nhận phản hồi thành công.
+
+---
+
+## GỢI Ý MÔ TẢ CÁC HÌNH ẢNH (FIGURES DESCRIPTION)
+
+1. **Figure 1: Kiến trúc mô hình Edge Computing.** (Sơ đồ kết nối PC - Pi 4 - Backend).
+2. **Figure 2: Phân phối khoảng cách Euclidean.** (Chứng minh tại sao chọn Threshold = 1.0).
+3. **Figure 3: Ma trận nhầm lẫn (Confusion Matrix).** (Đánh giá độ chính xác thực tế).
+4. **Figure 4: Biểu đồ so sánh thời gian xử lý.** (PC vs Pi 4).
+5. **Figure 5: Ảnh minh họa các bước tiền xử lý.** (Ảnh gốc -> Grayscale -> Blurred -> Cropped Face).

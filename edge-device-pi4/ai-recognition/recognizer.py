@@ -21,20 +21,54 @@ class FaceRecognizer:
     def __init__(self, model_path, db_path, threshold=1.0):
         self.threshold = threshold
         self.face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+        self.eye_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml')
         
         # 1. Load Database
         self.database = self.load_database(db_path)
         
-        # 2. Load TFLite Model
-        if os.path.exists(model_path):
-            self.interpreter = tflite.Interpreter(model_path=model_path)
-            self.interpreter.allocate_tensors()
-            self.input_details = self.interpreter.get_input_details()
-            self.output_details = self.interpreter.get_output_details()
-            print(f"Đã load model TFLite từ: {model_path}")
+        # 2. Load TFLite Model (Chỉ load nếu thư viện khả dụng)
+        if TFLITE_AVAILABLE and os.path.exists(model_path):
+            try:
+                self.interpreter = tflite.Interpreter(model_path=model_path)
+                self.interpreter.allocate_tensors()
+                self.input_details = self.interpreter.get_input_details()
+                self.output_details = self.interpreter.get_output_details()
+                print(f"Đã load model TFLite từ: {model_path}")
+            except Exception as e:
+                self.interpreter = None
+                print(f"Lỗi khi khởi tạo Interpreter: {e}")
         else:
             self.interpreter = None
-            print(f"CẢNH BÁO: Không tìm thấy file model tại {model_path}")
+            if not TFLITE_AVAILABLE:
+                print("Hệ thống chạy Mock Mode vì thiếu thư viện tflite-runtime.")
+            else:
+                print(f"CẢNH BÁO: Không tìm thấy file model tại {model_path}")
+
+    def align_face(self, image, gray, face_box):
+        """
+        Căn chỉnh khuôn mặt dựa trên mắt (phiên bản tối ưu cho Edge)
+        """
+        x, y, w, h = face_box
+        roi_gray = gray[y:y+h, x:x+w]
+        roi_color = image[y:y+h, x:x+w]
+        
+        # Detect mắt — minNeighbors=5 đủ để lọc nhiễu mà không bỏ sót mắt thật
+        eyes = self.eye_cascade.detectMultiScale(roi_gray, scaleFactor=1.1, minNeighbors=5)
+        
+        if len(eyes) >= 2:
+            eyes = sorted(eyes, key=lambda e: e[0])
+            # Ép kiểu int cho OpenCV
+            l_center = (int(eyes[0][0] + eyes[0][2]//2), int(eyes[0][1] + eyes[0][3]//2))
+            r_center = (int(eyes[-1][0] + eyes[-1][2]//2), int(eyes[-1][1] + eyes[-1][3]//2))
+            
+            dy = r_center[1] - l_center[1]
+            dx = r_center[0] - l_center[0]
+            angle = np.degrees(np.arctan2(dy, dx))
+            
+            M = cv2.getRotationMatrix2D(l_center, angle, 1.0)
+            return cv2.warpAffine(roi_color, M, (w, h), flags=cv2.INTER_CUBIC)
+        
+        return roi_color
 
     def load_database(self, db_path):
         if os.path.exists(db_path):
@@ -47,33 +81,29 @@ class FaceRecognizer:
 
     def get_embedding(self, face_img):
         """
-        Trích xuất vector 512 chiều từ ảnh khuôn mặt (112x112)
-        Đồng bộ hóa tiền xử lý với extract_embeddings.py trên PC Server.
+        Trích xuất vector 512 chiều từ ảnh khuôn mặt
         """
         if self.interpreter is None:
             # Nếu chạy Mock Mode, trả về vector ngẫu nhiên để không gây lỗi luồng
             return np.random.rand(512)
 
-        # 1. Resize về kích thước chuẩn 112x112
+        # 1. Resize và chuẩn hóa màu RGB
         face_img = cv2.resize(face_img, (112, 112))
-        
-        # 2. Chuyển đổi màu sắc (MobileFaceNet yêu cầu định dạng RGB)
-        if len(face_img.shape) == 3:
-            face_img = cv2.cvtColor(face_img, cv2.COLOR_BGR2RGB)
-        else:
-            face_img = cv2.cvtColor(face_img, cv2.COLOR_GRAY2RGB)
+        face_rgb = cv2.cvtColor(face_img, cv2.COLOR_BGR2RGB)
             
-        # 3. Chuẩn hóa về dải [-1, 1] giống hệt PC Side
-        face_img = face_img.astype(np.float32)
-        face_img = (face_img - 127.5) / 127.5
+        # 2. Chi tiết Normalization: (x - 127.5) / 127.5 => dải [-1, 1]
+        # Đồng bộ 100% với extract_embeddings.py trên PC Server.
+        face_np = face_rgb.astype(np.float32)
+        face_np = (face_np - 127.5) / 127.5
         
         # 4. Kiểm tra shape model để tự động điều chỉnh NHWC/NCHW
+        #    QUAN TRỌNG: luôn dùng face_np (đã normalize), KHÔNG dùng face_img gốc
         input_shape = self.input_details[0]['shape']
-        if input_shape[3] == 3: # NHWC
-            input_data = np.expand_dims(face_img, axis=0)
-        else: # NCHW
-            face_img = np.transpose(face_img, (2, 0, 1))
-            input_data = np.expand_dims(face_img, axis=0)
+        if len(input_shape) == 4 and input_shape[1] == 3:  # NCHW: [1, 3, 112, 112]
+            face_nchw = np.transpose(face_np, (2, 0, 1))  # HWC -> CHW
+            input_data = np.expand_dims(face_nchw, axis=0).astype(np.float32)
+        else:  # NHWC: [1, 112, 112, 3]
+            input_data = np.expand_dims(face_np, axis=0).astype(np.float32)
 
         # Chạy Inference
         self.interpreter.set_tensor(self.input_details[0]['index'], input_data)
@@ -101,7 +131,9 @@ class FaceRecognizer:
             faces = self.face_cascade.detectMultiScale(gray, 1.1, 5)
             
             for (x, y, w, h) in faces:
-                face_crop = img[y:y+h, x:x+w]
+                # 1. Thực hiện Alignment trước khi crop
+                face_crop = self.align_face(img, gray, (x, y, w, h))
+                # 2. Lấy embedding
                 embedding = self.get_embedding(face_crop)
                 batch_embeddings.append(embedding)
                 break 
@@ -109,30 +141,31 @@ class FaceRecognizer:
         if not batch_embeddings:
             return "Unknown (No face detected)", 0.0
 
-        best_person = "Unknown"
-        min_avg_dist = float('inf')
-        closest_name_anyway = "None"
-        
+        min_avg_dist     = float('inf')
+        best_name_in_thresh = None   # Người gần nhất VÀ lọt ngưỡng
+        closest_name_anyway = "None" # Người gần nhất tuyệt đối (dù không lọt ngưỡng)
+
         for name, db_embedding in self.database.items():
             db_vec = np.array(db_embedding)
-            
-            # Tính khoảng cách cho từng mẫu trong batch
+
+            # Tính khoảng cách từng mẫu trong batch tới centroid DB
             dists = [np.linalg.norm(sample - db_vec) for sample in batch_embeddings]
             current_avg_dist = np.mean(dists)
-            
-            # Luôn theo dõi người gần nhất tuyệt đối để báo cáo cho người dùng
+
+            # Track người gần nhất tuyệt đối (để báo cáo khi không nhận diện được)
             if current_avg_dist < min_avg_dist:
                 min_avg_dist = current_avg_dist
                 closest_name_anyway = name
-            
-            # Logic: Tất cả các mẫu đều phải nằm trong ngưỡng (threshold = 1.0)
-            if all(d < self.threshold for d in dists):
-                best_person = name
 
-        if best_person == "Unknown":
-            return f"Unknown (Closest: {closest_name_anyway})", min_avg_dist
-            
-        return best_person, min_avg_dist
+            # Logic chính: TẤT CẢ mẫu phải qua ngưỡng VÀ phải là gần nhất cho đến nay
+            if all(d < self.threshold for d in dists):
+                if best_name_in_thresh is None or current_avg_dist < min_avg_dist:
+                    best_name_in_thresh = name
+
+        if best_name_in_thresh is None:
+            return f"Unknown (Closest: {closest_name_anyway}, dist={min_avg_dist:.3f})", min_avg_dist
+
+        return best_name_in_thresh, min_avg_dist
 
     def cleanup(self, image_dir):
         """

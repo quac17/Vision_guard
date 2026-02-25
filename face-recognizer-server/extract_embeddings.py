@@ -12,54 +12,77 @@ MODEL_WEIGHTS = "./models/mobilefacenet_pretrained.pth" # Đường dẫn tới 
 
 # import face_recognition (Đã chuyển sang dùng OpenCV để dễ cài đặt trên Windows)
 
-# Load Haar Cascade cho face detection
+# Load Haar Cascade cho face và eye detection
 face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+eye_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml')
+
+def align_face(image, gray, face_box):
+    """
+    Căn chỉnh khuôn mặt dựa trên vị trí hai mắt để tăng độ chính xác
+    """
+    x, y, w, h = face_box
+    roi_gray = gray[y:y+h, x:x+w]
+    roi_color = image[y:y+h, x:x+w]
+    
+    eyes = eye_cascade.detectMultiScale(roi_gray, scaleFactor=1.1, minNeighbors=5)
+    
+    if len(eyes) >= 2:
+        # Sắp xếp mắt theo vị trí x
+        eyes = sorted(eyes, key=lambda e: e[0])
+        lex, ley, lew, leh = eyes[0] # Mắt trái (theo ảnh)
+        rex, rey, rew, reh = eyes[-1] # Mắt phải (theo ảnh)
+        
+        # Tính toán tâm mắt (phải ép kiểu int cho OpenCV)
+        l_center = (int(lex + lew//2), int(ley + leh//2))
+        r_center = (int(rex + rew//2), int(rey + reh//2))
+        
+        # Tính góc xoay
+        dy = r_center[1] - l_center[1]
+        dx = r_center[0] - l_center[0]
+        angle = np.degrees(np.arctan2(dy, dx))
+        
+        # Xoay ảnh xung quanh tâm mắt trái
+        M = cv2.getRotationMatrix2D(l_center, angle, 1.0)
+        aligned_face = cv2.warpAffine(roi_color, M, (w, h), flags=cv2.INTER_CUBIC)
+        return aligned_face
+    
+    return roi_color
 
 def get_face_embedding(model, img_path, device):
     """
-    Đọc ảnh, Phát hiện bằng OpenCV Haar Cascade, trích xuất vector 512 chiều
+    Đọc ảnh, Căn chỉnh khuôn mặt (Alignment), trích xuất vector 512 chiều
     """
     try:
-        # 1. Load ảnh bằng OpenCV
         image = cv2.imread(img_path)
-        if image is None:
-            return None
+        if image is None: return None
         
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        
-        # 2. Phát hiện vị trí khuôn mặt (Detection)
         faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
         
-        if len(faces) == 0:
-            return None
+        if len(faces) == 0: return None
             
-        # Lấy khuôn mặt đầu tiên (x, y, w, h)
-        x, y, w, h = faces[0]
-        face_image = image[y:y+h, x:x+w]
+        # 1. Alignment & Cropping
+        face_image = align_face(image, gray, faces[0])
         
-        # 3. Tiền xử lý (Resize 112x112 cho MobileFaceNet)
-        # Thay thế torchvision bằng cv2 + numpy để tránh lỗi Segmentation fault
+        # 2. Tiền xử lý (Resize 112x112)
         face_resized = cv2.resize(face_image, (112, 112))
-        
-        # BGR sang RGB
         face_rgb = cv2.cvtColor(face_resized, cv2.COLOR_BGR2RGB)
         
-        # [0, 255] -> [0, 1] -> [-1, 1] (theo Normalize mean=0.5, std=0.5)
-        face_np = face_rgb.astype(np.float32) / 255.0
-        face_np = (face_np - 0.5) / 0.5
+        # 3. Normalization ĐỒNG NHẤT: (x - 127.5) / 127.5 => dải [-1, 1]
+        face_np = face_rgb.astype(np.float32)
+        face_np = (face_np - 127.5) / 127.5
         
-        # HWC sang CHW (C, H, W)
+        # HWC sang CHW
         face_np = np.transpose(face_np, (2, 0, 1))
-        
-        # Thêm chiều batch và chuyển sang Tensor
         input_tensor = torch.from_numpy(face_np).unsqueeze(0).to(device)
         
         # 4. Inference
         with torch.no_grad():
             embedding = model(input_tensor)
+            # Chỉ normalize MUỘN sau khi tính centroid (không normalize ở đây)
+            # → trả về raw embedding để build_embeddings tính centroid chính xác hơn
             embedding = embedding.cpu().numpy().flatten()
-            embedding = embedding / np.linalg.norm(embedding)
-            
+
         return embedding.tolist()
     except Exception as e:
         print(f"Lỗi khi xử lý {img_path}: {e}")
@@ -72,10 +95,19 @@ def main():
     # 1. Khởi tạo Model
     model = MobileFaceNet(embedding_size=512).to(device)
     
-    # Load weights nếu file tồn tại, nếu không sẽ chạy với weights ngẫu nhiên (Demo)
+    # Load weights nếu file tồn tại
     if os.path.exists(MODEL_WEIGHTS):
-        model.load_state_dict(torch.load(MODEL_WEIGHTS, map_location=device))
-        print("Đã load weights thành công.")
+        checkpoint = torch.load(MODEL_WEIGHTS, map_location=device)
+        # Kiểm tra nếu là state_dict (đúng chuẩn)
+        if isinstance(checkpoint, dict):
+            model.load_state_dict(checkpoint)
+            print("Đã load weights (State Dict) thành công.")
+        # Nếu lỡ lưu cả model
+        elif isinstance(checkpoint, torch.nn.Module):
+            model = checkpoint
+            print("Đã load Full Model thành công.")
+        else:
+            print(f"CẢNH BÁO: File weights có kiểu dữ liệu lạ ({type(checkpoint)}). Có thể kết quả sẽ không chính xác.")
     else:
         print("CẢNH BÁO: Không tìm thấy file weights. Model sẽ chạy với tham số ngẫu nhiên.")
     
@@ -116,12 +148,9 @@ def main():
             # Tính trung bình cộng các đặc trưng
             centroid = np.mean(embeddings_array, axis=0)
             
-            # QUAN TRỌNG: Re-normalize vector trung bình (L2 Normalization)
-            # Điều này đưa vector về mặt cầu đơn vị, giúp so khớp chính xác hơn
+            # Normalize CENTROID một lần DUY NHẤT (không normalize từng embedding riêng)
             norm = np.linalg.norm(centroid)
-            if norm > 0:
-                centroid = centroid / norm
-            
+            centroid = centroid / norm if norm > 0 else centroid
             face_database["data"][person_name] = centroid.tolist()
 
     # 4. Đóng gói vào JSON
