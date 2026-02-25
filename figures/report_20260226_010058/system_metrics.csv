@@ -1,0 +1,8 @@
+Metric,Value
+Train Identities,33
+Test Identities,36
+Model Size (MB),0.824
+CPU Usage (%),52.7
+RAM Usage (%),75.2
+Inference Latency PC (ms),50.18
+Preprocessing Time (ms),1.99
