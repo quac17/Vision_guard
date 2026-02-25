@@ -52,9 +52,9 @@ uploads/students/*
 .docker/
 
 # Images
-.*.jpg
-.*.png
-.*.webp
-.*.pgm
-.*.jpeg
+*.jpg
+*.png
+*.webp
+*.pgm
+*.jpeg
 
