@@ -3,6 +3,8 @@ import json
 import numpy as np
 import os
 import time
+import requests
+from datetime import datetime
 
 TFLITE_AVAILABLE = False
 try:
@@ -43,6 +45,34 @@ class FaceRecognizer:
                 print("Hệ thống chạy Mock Mode vì thiếu thư viện tflite-runtime.")
             else:
                 print(f"CẢNH BÁO: Không tìm thấy file model tại {model_path}")
+        
+        # 3. API Configuration
+        self.api_base_url = os.getenv("API_BASE_URL", "http://localhost:8000")
+        self.edge_mode = "on_bus" # Default mode
+        print(f"API Base URL: {self.api_base_url}")
+
+    def submit_attendance(self, student_code):
+        """
+        Gửi dữ liệu điểm danh về backend server
+        """
+        url = f"{self.api_base_url}/edge/attendance"
+        payload = {
+            "student_code": student_code,
+            "status": self.edge_mode,
+            "attendance_time": datetime.now().isoformat()
+        }
+        
+        try:
+            response = requests.post(url, json=payload, timeout=5)
+            if response.status_code == 200:
+                print(f"--- ĐIỂM DANH THÀNH CÔNG ---: {student_code}")
+                return True
+            else:
+                print(f"LỖI API ({response.status_code}): {response.text}")
+                return False
+        except Exception as e:
+            print(f"KHÔNG THỂ KẾT NỐI API: {e}")
+            return False
 
     def align_face(self, image, gray, face_box):
         """
@@ -164,6 +194,15 @@ class FaceRecognizer:
 
         if best_name_in_thresh is None:
             return f"Unknown (Closest: {closest_name_anyway}, dist={min_avg_dist:.3f})", min_avg_dist
+
+        # Tự động gọi API điểm danh nếu nhận diện thành công
+        # Format: (tên)_(mã học sinh) -> s1_SV001
+        name_parts = best_name_in_thresh.split('_')
+        if len(name_parts) > 1:
+            student_code = name_parts[-1] # Lấy phần cuối cùng làm mã học sinh
+            self.submit_attendance(student_code)
+        else:
+            print(f"Bỏ qua call API cho {best_name_in_thresh} (Không tìm thấy mã học sinh)")
 
         return best_name_in_thresh, min_avg_dist
 

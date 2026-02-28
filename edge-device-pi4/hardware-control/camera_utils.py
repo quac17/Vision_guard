@@ -1,8 +1,35 @@
 import cv2
 import os
 import time
+import subprocess
 from pynput import keyboard
 from image_processor import preprocess_images
+
+# Import pygame for sound (pip install pygame)
+try:
+    import pygame
+    pygame.mixer.init()
+    HAS_PYGAME = True
+except ImportError:
+    HAS_PYGAME = False
+    print("Thông báo: Thư viện 'pygame' chưa được cài đặt. Sẽ không phát được âm thanh.")
+
+def play_sound(sound_file):
+    if not HAS_PYGAME:
+        return
+    
+    try:
+        # Load and play
+        if os.path.exists(sound_file):
+            pygame.mixer.music.load(sound_file)
+            pygame.mixer.music.play()
+            # Non-blocking play, but since recognition is in a loop, it's okay.
+            # If we want to wait, we'd loop while music is busy. 
+            # But let's not block the camera thread too much.
+        else:
+            print(f"Cảnh báo: Không tìm thấy file âm thanh {sound_file}")
+    except Exception as e:
+        print(f"Lỗi khi phát âm thanh {sound_file}: {e}")
 
 # import RPi.GPIO as GPIO
 
@@ -31,14 +58,20 @@ def capture_images(
     count = 0
 
     # Dictionary to track input status from listener thread
-    input_status = {"start_capture": False, "exit": False}
+    input_status = {"start_capture": False, "exit": False, "current_mode": "on_bus"}
 
     def on_press(key):
         try:
             if key == keyboard.Key.space:
                 input_status["start_capture"] = True
-            elif hasattr(key, 'char') and key.char == 'q':
-                input_status["exit"] = True
+            elif hasattr(key, 'char'):
+                if key.char == 'q':
+                    input_status["exit"] = True
+                elif key.char == 'c':
+                    # Toggle mode
+                    old_mode = input_status["current_mode"]
+                    input_status["current_mode"] = "off_bus" if old_mode == "on_bus" else "on_bus"
+                    print(f"\n[MODE] Đã chuyển từ {old_mode} -> {input_status['current_mode']}")
         except AttributeError:
             pass
 
@@ -47,7 +80,9 @@ def capture_images(
     listener.start()
 
     print("Nhấn 'Space' ngoài Terminal để chụp đợt 3 ảnh.")
+    print("Nhấn 'c' ngoài Terminal để đổi chế độ (On-Bus / Off-Bus).")
     print("Nhấn 'q' ngoài Terminal để thoát chương trình.")
+    print(f"CHẾ ĐỘ HIỆN TẠI: {input_status['current_mode']}")
 
     try:
         while True:
@@ -89,6 +124,8 @@ def capture_images(
                         db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "ai-recognition", "local_db", "face_embeddings.json"))
                         
                         recognizer = FaceRecognizer(model_path, db_path)
+                        recognizer.edge_mode = input_status["current_mode"] # Set mode from UI
+                        print(f"Bắt đầu nhận diện tại mode: {recognizer.edge_mode}")
                         name, distance = recognizer.recognize_batch(processed_dir)
                         
                         print(f"=====================================")
@@ -96,6 +133,18 @@ def capture_images(
                         print(f"Độ lệch (Distance): {distance:.4f}")
                         print(f"=====================================")
                         
+                        # Phát âm thanh phản hồi
+                        sound_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "sound"))
+                        if "Unknown" not in name:
+                            # Thành công
+                            if input_status["current_mode"] == "on_bus":
+                                play_sound(os.path.join(sound_dir, "on_bus.mp3"))
+                            else:
+                                play_sound(os.path.join(sound_dir, "off_bus.mp3"))
+                        else:
+                            # Thất bại
+                            play_sound(os.path.join(sound_dir, "reconize_fail.mp3"))
+
                         # Dọn dẹp ảnh đã xử lý sau khi nhận diện xong (như yêu cầu architechture)
                         recognizer.cleanup(processed_dir)
                         
