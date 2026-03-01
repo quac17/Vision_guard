@@ -70,12 +70,18 @@ def get_face_embedding(interpreter, img_path):
         face_resized = cv2.resize(face_image, (112, 112))
         face_rgb = cv2.cvtColor(face_resized, cv2.COLOR_BGR2RGB)
         
-        # 3. Normalization: (x - 127.5) / 127.5
+        # 3. Normalization: (x - 127.5) / 127.5 (đồng bộ với edge-device recognizer.py)
         face_np = face_rgb.astype(np.float32)
-        face_np = (face_np - 127.5) / 127.5 # [-1, 1]
+        face_np = (face_np - 127.5) / 127.5  # [-1, 1]
         
-        # TFLite input format: NHWC (1, 112, 112, 3)
-        input_tensor = np.expand_dims(face_np, axis=0)
+        # TFLite input: tự động NHWC hoặc NCHW theo model (giống recognizer.py)
+        input_details = interpreter.get_input_details()
+        input_shape = input_details[0]['shape']
+        if len(input_shape) == 4 and input_shape[1] == 3:  # NCHW: [1, 3, 112, 112]
+            face_nchw = np.transpose(face_np, (2, 0, 1))
+            input_tensor = np.expand_dims(face_nchw, axis=0).astype(np.float32)
+        else:  # NHWC: [1, 112, 112, 3]
+            input_tensor = np.expand_dims(face_np, axis=0).astype(np.float32)
         
         # 4. Inference
         input_details = interpreter.get_input_details()

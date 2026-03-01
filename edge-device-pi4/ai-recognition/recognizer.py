@@ -19,11 +19,29 @@ except ImportError:
     print("--- CHẾ ĐỘ GIẢ LẬP (MOCK MODE) ---")
     print("Thông báo: Không tìm thấy thư viện TFLite. Hệ thống sẽ tạo vector ngẫu nhiên để test luồng.")
 
+# Ngưỡng confidence cho face detection (DNN)
+# Hạ xuống để giảm "no face detected" sai trong ánh sáng kém / góc nghiêng
+DNN_CONF_MAIN = 0.5   # Ưu tiên detection >= 0.5
+DNN_CONF_FALLBACK = 0.35  # Nếu không có ai >= 0.5 thì chấp nhận detection tốt nhất >= 0.35
+
+
 class FaceRecognizer:
-    def __init__(self, model_path, db_path, threshold=1.0):
+    def __init__(self, model_path, db_path, threshold=0.45):
         self.threshold = threshold
-        self.face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
         self.eye_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml')
+        self.face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+        
+        # Thiết lập OpenCV DNN Face Detector (rất nhạy và chính xác, chịu được góc nghiêng)
+        self.dnn_model_path = os.path.join(os.path.dirname(model_path), "res10_300x300_ssd_iter_140000.caffemodel")
+        self.dnn_proto_path = os.path.join(os.path.dirname(model_path), "deploy.prototxt")
+        
+        if not os.path.exists(self.dnn_model_path) or not os.path.exists(self.dnn_proto_path):
+            print("Đang tải model Nhận diện khuôn mặt OpenCV DNN (chỉ tải 1 lần đầu)...")
+            import urllib.request
+            urllib.request.urlretrieve("https://raw.githubusercontent.com/opencv/opencv_3rdparty/dnn_samples_face_detector_20170830/res10_300x300_ssd_iter_140000.caffemodel", self.dnn_model_path)
+            urllib.request.urlretrieve("https://raw.githubusercontent.com/opencv/opencv/master/samples/dnn/face_detector/deploy.prototxt", self.dnn_proto_path)
+            
+        self.face_net = cv2.dnn.readNetFromCaffe(self.dnn_proto_path, self.dnn_model_path)
         
         # 1. Load Database
         self.database = self.load_database(db_path)
@@ -47,7 +65,7 @@ class FaceRecognizer:
                 print(f"CẢNH BÁO: Không tìm thấy file model tại {model_path}")
         
         # 3. API Configuration
-        self.api_base_url = os.getenv("API_BASE_URL", "http://localhost:8000")
+        self.api_base_url = os.getenv("API_BASE_URL", "http://100.85.100.28:8000")
         self.edge_mode = "on_bus" # Default mode
         print(f"API Base URL: {self.api_base_url}")
 
@@ -73,6 +91,69 @@ class FaceRecognizer:
         except Exception as e:
             print(f"KHÔNG THỂ KẾT NỐI API: {e}")
             return False
+
+    def _preprocess_for_detection(self, img):
+        """
+        Tăng tương phản ảnh (CLAHE trên kênh L) để face detection tốt hơn trong ánh sáng kém.
+        """
+        lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+        l, a, b = cv2.split(lab)
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        l = clahe.apply(l)
+        lab = cv2.merge([l, a, b])
+        return cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+
+    def _detect_face_dnn(self, img, h_img, w_img):
+        """ DNN detection: trả về (x, y, w, h) hoặc None. Dùng ngưỡng linh hoạt. """
+        blob = cv2.dnn.blobFromImage(img, 1.0, (300, 300), [104, 117, 123], False, False)
+        self.face_net.setInput(blob)
+        detections = self.face_net.forward()
+        best_face = None
+        best_conf = 0.0
+        for i in range(detections.shape[2]):
+            confidence = detections[0, 0, i, 2]
+            if confidence < DNN_CONF_FALLBACK:
+                continue
+            x1 = int(detections[0, 0, i, 3] * w_img)
+            y1 = int(detections[0, 0, i, 4] * h_img)
+            x2 = int(detections[0, 0, i, 5] * w_img)
+            y2 = int(detections[0, 0, i, 6] * h_img)
+            if confidence > best_conf:
+                best_conf = confidence
+                best_face = (max(0, x1), max(0, y1), min(w_img, x2) - max(0, x1), min(h_img, y2) - max(0, y1))
+        return best_face
+
+    def _detect_face_haar(self, gray):
+        """ Fallback: Haar cascade mặt chính diện. Trả về (x, y, w, h) lớn nhất hoặc None. """
+        faces = self.face_cascade.detectMultiScale(
+            gray, scaleFactor=1.1, minNeighbors=4, minSize=(30, 30), flags=cv2.CASCADE_SCALE_IMAGE
+        )
+        if len(faces) == 0:
+            return None
+        # Chọn mặt có diện tích lớn nhất
+        return max(faces, key=lambda r: r[2] * r[3])
+
+    def _get_one_face_box(self, img, gray, use_preprocess_retry=True):
+        """
+        Lấy một vùng mặt từ ảnh: ưu tiên DNN (ngưỡng linh hoạt), fallback Haar, có thể retry với ảnh đã CLAHE.
+        """
+        h_img, w_img = img.shape[:2]
+        # 1. Thử DNN trên ảnh gốc
+        face_box = self._detect_face_dnn(img, h_img, w_img)
+        if face_box is not None:
+            return face_box
+        # 2. Fallback Haar trên ảnh xám
+        face_box = self._detect_face_haar(gray)
+        if face_box is not None:
+            return face_box
+        # 3. Retry: DNN + Haar trên ảnh đã tăng tương phản (ánh sáng kém)
+        if use_preprocess_retry:
+            enhanced = self._preprocess_for_detection(img)
+            gray_enh = cv2.cvtColor(enhanced, cv2.COLOR_BGR2GRAY)
+            face_box = self._detect_face_dnn(enhanced, h_img, w_img)
+            if face_box is None:
+                face_box = self._detect_face_haar(gray_enh)
+        return face_box
 
     def align_face(self, image, gray, face_box):
         """
@@ -114,8 +195,10 @@ class FaceRecognizer:
         Trích xuất vector 512 chiều từ ảnh khuôn mặt
         """
         if self.interpreter is None:
-            # Nếu chạy Mock Mode, trả về vector ngẫu nhiên để không gây lỗi luồng
-            return np.random.rand(512)
+            # Nếu chạy Mock Mode, trả về vector ngẫu nhiên.
+            # Tự động đồng bộ số chiều (128 hoặc 512) với database hiện tại để tránh lỗi shape
+            mock_dim = len(list(self.database.values())[0]) if self.database else 512
+            return np.random.rand(mock_dim)
 
         # 1. Resize và chuẩn hóa màu RGB
         face_img = cv2.resize(face_img, (112, 112))
@@ -147,8 +230,8 @@ class FaceRecognizer:
     def recognize_batch(self, image_dir):
         """
         Nhận diện dựa trên một tập hợp ảnh.
-        Yêu cầu mới: Sử dụng khoảng cách Euclid. Tất cả các mẫu trong đợt chụp
-        đều phải vượt qua ngưỡng (threshold) đối với cùng một định danh.
+        Sử dụng Khoảng cách Cosine (Cosine Distance) thay vì L2 để tăng độ chính xác,
+        để phù hợp với đặc thù của các model nhận diện (như MobileFaceNet chú trọng vào góc vector).
         """
         batch_embeddings = []
         
@@ -158,37 +241,44 @@ class FaceRecognizer:
             if img is None: continue
             
             gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            faces = self.face_cascade.detectMultiScale(gray, 1.1, 5)
             
-            for (x, y, w, h) in faces:
+            # Bắt mặt: DNN (ngưỡng linh hoạt 0.35–0.5) → fallback Haar → retry với ảnh CLAHE
+            best_face = self._get_one_face_box(img, gray, use_preprocess_retry=True)
+            
+            if best_face:
+                x, y, w, h = best_face
                 # 1. Thực hiện Alignment trước khi crop
                 face_crop = self.align_face(img, gray, (x, y, w, h))
                 # 2. Lấy embedding
                 embedding = self.get_embedding(face_crop)
                 batch_embeddings.append(embedding)
-                break 
 
         if not batch_embeddings:
             return "Unknown (No face detected)", 0.0
 
         min_avg_dist     = float('inf')
-        best_name_in_thresh = None   # Người gần nhất VÀ lọt ngưỡng
-        closest_name_anyway = "None" # Người gần nhất tuyệt đối (dù không lọt ngưỡng)
-
+        best_name_in_thresh = None   
+        closest_name_anyway = "None" 
+        
         for name, db_embedding in self.database.items():
             db_vec = np.array(db_embedding)
 
-            # Tính khoảng cách từng mẫu trong batch tới centroid DB
-            dists = [np.linalg.norm(sample - db_vec) for sample in batch_embeddings]
+            # Tính khoảng cách Cosine Distance (Càng gần 0.0 càng giống)
+            # Độ đo này đặc biệt hiệu quả với các model chuẩn hóa học theo góc (Angular Margin)
+            dists = [1.0 - np.dot(sample, db_vec) for sample in batch_embeddings]
             current_avg_dist = np.mean(dists)
 
-            # Track người gần nhất tuyệt đối (để báo cáo khi không nhận diện được)
+            # Track người gần nhất tuyệt đối
             if current_avg_dist < min_avg_dist:
                 min_avg_dist = current_avg_dist
                 closest_name_anyway = name
 
-            # Logic chính: TẤT CẢ mẫu phải qua ngưỡng VÀ phải là gần nhất cho đến nay
-            if all(d < self.threshold for d in dists):
+            # Áp dụng chiến thuật "Bỏ phiếu quá bán" (Majority Voting)
+            # Tăng tính chịu đựng (Robustness) nếu có 1 ảnh bị nhòe/sai trễ trong 3 ảnh chụp
+            pass_count = sum(1 for d in dists if d < self.threshold)
+            
+            # Nếu hơn một nửa số ảnh trong lượt (ví dụ 2/3) vượt qua ngưỡng quy định
+            if pass_count > len(batch_embeddings) / 2:
                 if best_name_in_thresh is None or current_avg_dist < min_avg_dist:
                     best_name_in_thresh = name
 

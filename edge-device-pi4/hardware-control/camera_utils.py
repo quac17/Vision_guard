@@ -2,8 +2,49 @@ import cv2
 import os
 import time
 import subprocess
-from pynput import keyboard
+import sys
+import threading
 from image_processor import preprocess_images
+
+class TerminalListener:
+    def __init__(self, on_press):
+        self.on_press = on_press
+        self.running = True
+        self.thread = threading.Thread(target=self._run, daemon=True)
+
+    def start(self):
+        self.thread.start()
+
+    def stop(self):
+        self.running = False
+
+    def _run(self):
+        try:
+            if os.name == 'nt':
+                import msvcrt
+                while self.running:
+                    if msvcrt.kbhit():
+                        key = msvcrt.getch().decode('utf-8', 'ignore')
+                        self.on_press(key)
+                        time.sleep(0.05)
+            else:
+                import tty, termios, select
+                fd = sys.stdin.fileno()
+                if not os.isatty(fd):
+                    print("Cảnh báo: Đang chạy ngầm (Detached). Tính năng gõ phím từ Terminal bị vô hiệu hóa.")
+                    return
+                old_settings = termios.tcgetattr(fd)
+                try:
+                    tty.setcbreak(fd)
+                    while self.running:
+                        dr, _, _ = select.select([sys.stdin], [], [], 0.5)
+                        if dr:
+                            key = sys.stdin.read(1)
+                            self.on_press(key)
+                finally:
+                    termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        except Exception as e:
+            pass
 
 # Import pygame for sound (pip install pygame)
 try:
@@ -13,6 +54,9 @@ try:
 except ImportError:
     HAS_PYGAME = False
     print("Thông báo: Thư viện 'pygame' chưa được cài đặt. Sẽ không phát được âm thanh.")
+except Exception as e:
+    HAS_PYGAME = False
+    print(f"Lỗi khởi tạo âm thanh (có thể thiếu thiết bị /dev/snd): {e}")
 
 def play_sound(sound_file):
     if not HAS_PYGAME:
@@ -50,47 +94,69 @@ def capture_images(
     backend = cv2.CAP_V4L2 if os.name != 'nt' else cv2.CAP_ANY
     cap = cv2.VideoCapture(camera_index, backend)
     
-    # Thiết lập nhanh độ phân giải thấp để camera sẵn sàng sớm hơn
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    # Tăng độ phân giải lên HD để nhận nét hơn
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
     # Giảm buffer size để không bị trễ ảnh cũ
     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
     count = 0
 
     # Dictionary to track input status from listener thread
     input_status = {"start_capture": False, "exit": False, "current_mode": "on_bus"}
+    
+    # Biến cờ kiểm tra xem có khởi tạo được giao diện hiển thị không (X11/Wayland)
+    gui_available = True
+    try:
+        cv2.namedWindow('Vision Guard Edge', cv2.WINDOW_NORMAL)
+        cv2.resizeWindow('Vision Guard Edge', 800, 600)
+    except cv2.error:
+        gui_available = False
+        print("Không có môi trường giao diện đồ họa. Chạy ngầm ở chế độ Terminal.")
 
     def on_press(key):
-        try:
-            if key == keyboard.Key.space:
-                input_status["start_capture"] = True
-            elif hasattr(key, 'char'):
-                if key.char == 'q':
-                    input_status["exit"] = True
-                elif key.char == 'c':
-                    # Toggle mode
-                    old_mode = input_status["current_mode"]
-                    input_status["current_mode"] = "off_bus" if old_mode == "on_bus" else "on_bus"
-                    print(f"\n[MODE] Đã chuyển từ {old_mode} -> {input_status['current_mode']}")
-        except AttributeError:
-            pass
+        if key == ' ':
+            input_status["start_capture"] = True
+        elif key == 'c':
+            # Toggle mode
+            old_mode = input_status["current_mode"]
+            input_status["current_mode"] = "off_bus" if old_mode == "on_bus" else "on_bus"
+            print(f"\n[MODE] Đã chuyển từ {old_mode} -> {input_status['current_mode']}")
 
-    # Start listener thread
-    listener = keyboard.Listener(on_press=on_press)
-    listener.start()
+    # Start listener thread (Chỉ dùng nếu không có GUI)
+    listener = None
+    if not gui_available:
+        listener = TerminalListener(on_press=on_press)
+        listener.start()
 
     print("Nhấn 'Space' ngoài Terminal để chụp đợt 3 ảnh.")
     print("Nhấn 'c' ngoài Terminal để đổi chế độ (On-Bus / Off-Bus).")
-    print("Nhấn 'q' ngoài Terminal để thoát chương trình.")
     print(f"CHẾ ĐỘ HIỆN TẠI: {input_status['current_mode']}")
 
     try:
         while True:
-            # We still need to read once to keep the buffer clean if using a live stream
+            # Liên tục đọc luồng camera
             ret, frame = cap.read()
             if not ret:
                 print("Không mở được camera")
                 break
+                
+            # Hiển thị camera nếu có GUI
+            if gui_available:
+                # Vẽ text trạng thái lên màn hình
+                display_frame = frame.copy()
+                cv2.putText(display_frame, f"Mode: {input_status['current_mode']}", (20, 40), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                cv2.putText(display_frame, "Press SPACE to capture, C to change mode", (20, 80), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                
+                cv2.imshow('Vision Guard Edge', display_frame)
+                
+                # Bắt phím bấm trực tiếp từ cửa sổ hiển thị
+                key = cv2.waitKey(1) & 0xFF
+                if key == ord(' '):
+                    on_press(' ')
+                elif key == ord('c'):
+                    on_press('c')
 
             if input_status["start_capture"]:
                 print(f"\nĐang chụp {total_images} ảnh...")
@@ -161,18 +227,22 @@ def capture_images(
                             print(f"Lỗi khi xóa {file_path}: {e}")
                     print("Đã dọn dẹp xong.")
 
-                print("Xong đợt. Nhấn 'Space' để tiếp tục hoặc 'q' để thoát.")
+                print("Xong đợt. Nhấn 'Space' để tiếp tục.")
 
             if input_status["exit"]:
                 print("Đang thoát...")
                 break
             
-            # Small sleep to prevent high CPU usage in the while loop
-            time.sleep(0.01)
+            # Nếu không có GUI, thêm đoạn nghỉ nhỏ để tránh ăn CPU
+            if not gui_available:
+                time.sleep(0.01)
 
     finally:
         cap.release()
-        listener.stop()
+        if gui_available:
+            cv2.destroyAllWindows()
+        elif listener:
+            listener.stop()
 
 # Test riêng file này
 if __name__ == "__main__":

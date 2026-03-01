@@ -83,7 +83,7 @@ Nếu bạn muốn chạy trực tiếp trên máy:
 
 **Chạy API:**
 ```bash
-uvicorn src.main:app --reload
+uvicorn src.main:app --host 0.0.0.0 --reload
 ```
 
 **Chạy Batch:**
