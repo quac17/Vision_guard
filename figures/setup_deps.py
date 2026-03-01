@@ -27,20 +27,20 @@ def _is_installed(module_name: str) -> bool:
 
 def _install(package_name: str) -> bool:
     """Cài thư viện qua pip, trả về True nếu thành công."""
-    print(f"  → Cài đặt: {package_name} ...")
+    print(f"  Cai dat: {package_name} ...")
     try:
         result = subprocess.run(
             [sys.executable, "-m", "pip", "install", package_name, "--quiet"],
             capture_output=True, text=True, timeout=120
         )
         if result.returncode == 0:
-            print(f"  ✓ Cài thành công: {package_name}")
+            print(f"  OK cai xong: {package_name}")
             return True
         else:
-            print(f"  ✗ Lỗi khi cài {package_name}: {result.stderr.strip()[:200]}")
+            print(f"  Loi khi cai {package_name}: {result.stderr.strip()[:200]}")
             return False
     except Exception as e:
-        print(f"  ✗ Exception khi cài {package_name}: {e}")
+        print(f"  Exception khi cai {package_name}: {e}")
         return False
 
 def check_and_install_pc_deps() -> bool:
@@ -48,13 +48,13 @@ def check_and_install_pc_deps() -> bool:
     Kiểm tra & cài đặt thư viện cho PC Phase (PyTorch-based).
     Trả về True nếu tất cả thư viện sẵn sàng.
     """
-    print("\n[SETUP] Kiểm tra thư viện PC Phase...")
+    print("\n[SETUP] Kiem tra thu vien PC Phase...")
     all_ok = True
     for module, package in PC_PHASE_DEPS.items():
         if _is_installed(module):
-            print(f"  ✓ Đã có: {module}")
+            print(f"  OK: {module}")
         else:
-            print(f"  ✗ Thiếu: {module}")
+            print(f"  Thieu: {module}")
             ok = _install(package)
             if not ok:
                 all_ok = False
@@ -66,29 +66,29 @@ def check_and_install_edge_deps() -> bool:
     Trả về True nếu tflite khả dụng.
     Nếu không cài được (Windows), trả về False và báo dùng PyTorch thay thế.
     """
-    print("\n[SETUP] Kiểm tra thư viện Edge Phase (TFLite)...")
+    print("\n[SETUP] Kiem tra thu vien Edge Phase (TFLite)...")
     
-    # Thử import tflite_runtime trước
+    # Thu import tflite_runtime truoc
     if _is_installed("tflite_runtime"):
-        print("  ✓ tflite_runtime: Đã có")
+        print("  OK: tflite_runtime da co")
         return True
     
-    # Thử cài tflite-runtime
-    print("  ✗ Thiếu tflite_runtime — Thử cài tflite-runtime ...")
+    # Thu cai tflite-runtime
+    print("  Thieu tflite_runtime - Thu cai tflite-runtime ...")
     if _install("tflite-runtime"):
         return True
     
     # Thử import tensorflow rồi dùng tensorflow.lite thay thế
     if _is_installed("tensorflow"):
-        print("  ✓ tensorflow: Đã có (sẽ dùng tensorflow.lite thay thế)")
+        print("  OK: tensorflow da co (dung tensorflow.lite thay the)")
         return True
     
-    print("  ⚠ Không thể cài tflite trên môi trường này (thường là Windows).")
-    print("    → Edge Phase sẽ dùng PyTorch làm inference engine thay thế.")
+    print("  Khong cai duoc tflite tren moi truong nay (thuong la Windows).")
+    print("  Edge Phase se dung PyTorch lam inference thay the.")
     return False
 
 
 if __name__ == "__main__":
     check_and_install_pc_deps()
     check_and_install_edge_deps()
-    print("\n[SETUP] Hoàn tất kiểm tra thư viện.")
+    print("\n[SETUP] Hoan tat kiem tra thu vien.")

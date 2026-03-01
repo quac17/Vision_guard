@@ -1,6 +1,7 @@
 """
-accuracy_tools.py — Tính toán độ chính xác và xây dựng database cho Vision Guard
-Sử dụng TFLite model để đồng bộ với Edge Phase.
+accuracy_tools.py — Tính toán độ chính xác và xây dựng database cho Vision Guard.
+- PC Phase: TFLite + extract_embeddings (server), Euclidean match.
+- Edge Phase: Dùng pipeline thật tại edge (FaceRecognizer, cosine distance, threshold 0.45).
 """
 import os
 import sys
@@ -16,9 +17,10 @@ except ImportError:
     except ImportError:
         tflite = None
 
-# ── Import MobileFaceNet và extract_embeddings từ face-recognizer-server ──────
+# ── Paths ────────────────────────────────────────────────────────────────────
 _FIGURES_DIR = os.path.dirname(os.path.abspath(__file__))
 _SERVER_DIR  = os.path.join(_FIGURES_DIR, "../face-recognizer-server")
+_EDGE_RECOGNIZER_DIR = os.path.join(_FIGURES_DIR, "../edge-device-pi4/ai-recognition")
 
 for _p in [_FIGURES_DIR, _SERVER_DIR]:
     if _p not in sys.path:
@@ -32,11 +34,11 @@ for _p in [_FIGURES_DIR, _SERVER_DIR]:
 def _load_tflite_model(model_path):
     """Khởi tạo TFLite Interpreter."""
     if tflite is None:
-        print("LỖI: Chưa cài đặt tflite-runtime hoặc tensorflow.")
+        print("LOI: Chua cai dat tflite-runtime hoac tensorflow.")
         return None
     
     if not os.path.exists(model_path):
-        print(f"LỖI: Không tìm thấy model tại {model_path}")
+        print(f"LOI: Khong tim thay model tai {model_path}")
         return None
         
     interpreter = tflite.Interpreter(model_path=model_path)
@@ -55,7 +57,7 @@ def build_embeddings_from_train_data(train_data_dir, model_path):
     """
     from extract_embeddings import get_face_embedding
 
-    print(f"\n--- BUILD DATABASE TỪ TRAIN DATA (TFLite) ---")
+    print(f"\n--- BUILD DATABASE TU TRAIN DATA (TFLite) ---")
     print(f"  Model: {model_path}")
     
     interpreter = _load_tflite_model(model_path)
@@ -80,11 +82,11 @@ def build_embeddings_from_train_data(train_data_dir, model_path):
             norm = np.linalg.norm(centroid)
             centroid = centroid / norm if norm > 0 else centroid
             database[person] = centroid.tolist()
-            print(f"  [{idx+1:>2}/{len(identities)}] {person}: {len(vecs)} ảnh OK")
+            print(f"  [{idx+1:>2}/{len(identities)}] {person}: {len(vecs)} anh OK")
         else:
-            print(f"  [{idx+1:>2}/{len(identities)}] {person}: ⚠ không có ảnh hợp lệ")
+            print(f"  [{idx+1:>2}/{len(identities)}] {person}: khong co anh hop le")
 
-    print(f"  ✓ Đã xây dựng Database ({len(database)} identities) trong bộ nhớ.")
+    print(f"  Da xay dung Database ({len(database)} identities) trong bo nho.")
     return database
 
 
@@ -111,7 +113,7 @@ def test_accuracy_pc(database, data_dir, model_path, threshold=1.0):
     """Test độ chính xác trên PC Phase bằng TFLite."""
     from extract_embeddings import get_face_embedding
 
-    print(f"\n--- ĐÁNH GIÁ ĐỘ CHÍNH XÁC (PC PHASE — TFLite local) ---")
+    print(f"\n--- DANH GIA DO CHINH XAC (PC PHASE - TFLite local) ---")
 
     interpreter = _load_tflite_model(model_path)
     if interpreter is None: return 0, None, []
@@ -155,10 +157,10 @@ def test_accuracy_edge(database, test_data_dir, model_path, threshold=1.0):
     """Test Edge Phase bằng TFLite."""
     from extract_embeddings import get_face_embedding
 
-    print(f"\n--- ĐÁNH GIÁ ĐỘ CHÍNH XÁC (EDGE PHASE — TFLite local) ---")
+    print(f"\n--- DANH GIA DO CHINH XAC (EDGE PHASE - TFLite local) ---")
 
     interpreter = _load_tflite_model(model_path)
-    if interpreter is None: return 0, None, [], []
+    if interpreter is None: return 0, None, [], [], None
 
     names         = sorted(database.keys())
     n             = len(names)
@@ -171,6 +173,8 @@ def test_accuracy_edge(database, test_data_dir, model_path, threshold=1.0):
 
     correct = total_known = false_positives = total_unknown = 0
     unknown_report = []
+    # Hàng confusion cho "Actual = Unknown" (người ngoài DB)
+    unknown_row = np.zeros(n + 1)
 
     # Test known
     for person in known_ps:
@@ -213,6 +217,10 @@ def test_accuracy_edge(database, test_data_dir, model_path, threshold=1.0):
             is_fp = (label != "Unknown")
             if is_fp:
                 false_positives += 1
+            if label in name_to_idx:
+                unknown_row[name_to_idx[label]] += 1
+            else:
+                unknown_row[n] += 1
             unknown_report.append({
                 "actual": person,
                 "image": img_f,
@@ -225,6 +233,95 @@ def test_accuracy_edge(database, test_data_dir, model_path, threshold=1.0):
     far = false_positives / total_unknown * 100 if total_unknown else 0
     frr = (1 - correct / total_known) * 100 if total_known else 0
     print(f"  Known Accuracy (TPR) : {acc:.2f}%  ({correct}/{total_known})")
-    print(f"  FAR (unknown nhận nhầm): {far:.2f}%  ({false_positives}/{total_unknown})")
-    print(f"  FRR (người quen bị từ chối): {frr:.2f}%")
-    return acc, conf_matrix, names, unknown_report
+    print(f"  FAR (unknown nhan nham): {far:.2f}%  ({false_positives}/{total_unknown})")
+    print(f"  FRR (nguoi quen bi tu choi): {frr:.2f}%")
+    return acc, conf_matrix, names, unknown_report, unknown_row
+
+
+# ──────────────────────────────────────────────────────────────
+# 6. Edge Phase — dùng pipeline thật (FaceRecognizer, cosine, đánh giá theo folder)
+# ──────────────────────────────────────────────────────────────
+
+def test_accuracy_edge_via_recognizer(test_data_dir, model_path, database, temp_db_path, threshold=0.45):
+    """
+    Đánh giá Edge Phase bằng pipeline giống run_test.py:
+    FaceRecognizer (DNN+Haar detection, 160x160, cosine distance, majority vote),
+    một kết quả cho mỗi folder (batch), threshold cosine mặc định 0.45.
+    database: dict name -> list (centroid); temp_db_path: đường dẫn ghi file JSON tạm.
+    Trả về (acc, conf_matrix, names, unknown_report, unknown_row) cùng format với test_accuracy_edge.
+    """
+    if not os.path.isdir(test_data_dir):
+        print(f"  LOI: Khong tim thay thu muc test {test_data_dir}")
+        return 0, None, [], [], None
+
+    # Ghi database ra file JSON (format giống face_embeddings.json)
+    db_content = {
+        "metadata": {"model": "MobileFaceNet", "dimension": 512, "description": "Temp for report"},
+        "data": database
+    }
+    with open(temp_db_path, "w", encoding="utf-8") as f:
+        json.dump(db_content, f, ensure_ascii=False)
+
+    # Import FaceRecognizer từ edge-device-pi4/ai-recognition
+    if _EDGE_RECOGNIZER_DIR not in sys.path:
+        sys.path.insert(0, _EDGE_RECOGNIZER_DIR)
+    try:
+        from recognizer import FaceRecognizer
+    except Exception as e:
+        print(f"  LOI: Khong import duoc FaceRecognizer tu edge: {e}")
+        return 0, None, [], [], None
+
+    try:
+        recognizer = FaceRecognizer(model_path, temp_db_path, threshold=threshold)
+        recognizer.submit_attendance = lambda code: None  # Tắt API khi chạy report
+    except Exception as e:
+        print(f"  LOI: Khoi tao FaceRecognizer: {e}")
+        return 0, None, [], [], None
+
+    names = sorted(database.keys())
+    n = len(names)
+    name_to_idx = {nm: i for i, nm in enumerate(names)}
+    conf_matrix = np.zeros((n, n + 1))
+    unknown_row = np.zeros(n + 1)
+    unknown_report = []
+
+    correct = total_known = 0
+    persons = sorted([d for d in os.listdir(test_data_dir)
+                      if os.path.isdir(os.path.join(test_data_dir, d))])
+    known_folders = [p for p in persons if p in name_to_idx]
+    unknown_folders = [p for p in persons if p not in name_to_idx]
+
+    for folder_name in persons:
+        subject_dir = os.path.join(test_data_dir, folder_name)
+        identified_name, distance = recognizer.recognize_batch(subject_dir)
+        # Chuẩn hóa predicted: nếu chuỗi chứa "Unknown" thì coi là Unknown
+        if "Unknown" in str(identified_name):
+            predicted = "Unknown"
+        else:
+            predicted = identified_name
+
+        pred_idx = name_to_idx.get(predicted, n)
+        is_correct = (predicted == folder_name)
+
+        if folder_name in name_to_idx:
+            total_known += 1
+            if is_correct:
+                correct += 1
+            ai = name_to_idx[folder_name]
+            conf_matrix[ai][pred_idx] += 1
+        else:
+            unknown_row[pred_idx] += 1
+
+        unknown_report.append({
+            "actual": folder_name,
+            "image": "(batch)",
+            "predicted": predicted,
+            "min_distance": round(float(distance), 4),
+            "false_positive": (folder_name not in name_to_idx and predicted != "Unknown")
+        })
+
+    acc = (correct / total_known * 100) if total_known else 0
+    print(f"\n--- DANH GIA DO CHINH XAC (EDGE PHASE - qua FaceRecognizer, cosine threshold={threshold}) ---")
+    print(f"  Known Accuracy (theo folder): {acc:.2f}%  ({correct}/{total_known} folder)")
+    print(f"  So folder test: {len(persons)} (known: {total_known}, unknown: {len(unknown_folders)})")
+    return acc, conf_matrix, names, unknown_report, unknown_row

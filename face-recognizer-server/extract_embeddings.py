@@ -66,21 +66,21 @@ def get_face_embedding(interpreter, img_path):
         # 1. Alignment & Cropping
         face_image = align_face(image, gray, faces[0])
         
-        # 2. Tiền xử lý (Resize 112x112)
-        face_resized = cv2.resize(face_image, (112, 112))
+        # 2. Resize 160x160 (model yêu cầu input shape 160x160)
+        input_details = interpreter.get_input_details()
+        input_shape = input_details[0]['shape']
+        face_resized = cv2.resize(face_image, (160, 160))
         face_rgb = cv2.cvtColor(face_resized, cv2.COLOR_BGR2RGB)
         
-        # 3. Normalization: (x - 127.5) / 127.5 (đồng bộ với edge-device recognizer.py)
+        # 3. Normalization: (x - 127.5) / 127.5 (dong bo voi edge-device recognizer.py)
         face_np = face_rgb.astype(np.float32)
         face_np = (face_np - 127.5) / 127.5  # [-1, 1]
         
-        # TFLite input: tự động NHWC hoặc NCHW theo model (giống recognizer.py)
-        input_details = interpreter.get_input_details()
-        input_shape = input_details[0]['shape']
-        if len(input_shape) == 4 and input_shape[1] == 3:  # NCHW: [1, 3, 112, 112]
+        # TFLite input: tu dong NHWC hoac NCHW theo model
+        if len(input_shape) == 4 and input_shape[1] == 3:  # NCHW
             face_nchw = np.transpose(face_np, (2, 0, 1))
             input_tensor = np.expand_dims(face_nchw, axis=0).astype(np.float32)
-        else:  # NHWC: [1, 112, 112, 3]
+        else:  # NHWC
             input_tensor = np.expand_dims(face_np, axis=0).astype(np.float32)
         
         # 4. Inference
@@ -94,7 +94,7 @@ def get_face_embedding(interpreter, img_path):
         return embedding.flatten().tolist()
         
     except Exception as e:
-        print(f"Lỗi khi xử lý {img_path}: {e}")
+        print(f"Loi xu ly {img_path}: {e}")
         return None
 
 def main():

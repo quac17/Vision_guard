@@ -1,6 +1,12 @@
 # Vision Guard Backend Server
 
-Hệ thống quản lý điểm danh học sinh trên xe buýt trường học sử dụng FastAPI, PostgreSQL và Docker.
+Hệ thống quản lý điểm danh học sinh trên xe buýt trường học sử dụng **FastAPI**, **PostgreSQL** và **Docker**. Đây là phần **trung tâm** của kiến trúc hybrid edge–server: nhận kết quả điểm danh từ thiết bị edge (Raspberry Pi 4), lưu lịch sử và gửi thông báo cho phụ huynh.
+
+## Vai trò trong kiến trúc
+
+- **Edge → Backend:** Thiết bị Pi 4 gửi `POST /edge/attendance` với `student_code`, `status`, `attendance_time` (không gửi ảnh/embedding — privacy-preserving).
+- **Backend:** Lưu trữ lịch sử điểm danh, quản lý học sinh/phụ huynh, batch job gửi email thông báo.
+- **Thông số liên quan (từ báo cáo):** 33 học sinh (train), 36 người test; API phục vụ xác nhận điểm danh trong thời gian cấp giây (< 0.5 s end-to-end khi kết hợp với edge).
 
 ## Tính năng
 - **Admin**: Đăng nhập, quản lý tài khoản phụ huynh, quản lý thông tin học sinh (CRUD).

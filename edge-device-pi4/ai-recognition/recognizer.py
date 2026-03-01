@@ -200,8 +200,8 @@ class FaceRecognizer:
             mock_dim = len(list(self.database.values())[0]) if self.database else 512
             return np.random.rand(mock_dim)
 
-        # 1. Resize và chuẩn hóa màu RGB
-        face_img = cv2.resize(face_img, (112, 112))
+        # 1. Resize 160x160 (theo yêu cầu input của model) và chuẩn hóa màu RGB
+        face_img = cv2.resize(face_img, (160, 160))
         face_rgb = cv2.cvtColor(face_img, cv2.COLOR_BGR2RGB)
             
         # 2. Chi tiết Normalization: (x - 127.5) / 127.5 => dải [-1, 1]
@@ -212,10 +212,10 @@ class FaceRecognizer:
         # 4. Kiểm tra shape model để tự động điều chỉnh NHWC/NCHW
         #    QUAN TRỌNG: luôn dùng face_np (đã normalize), KHÔNG dùng face_img gốc
         input_shape = self.input_details[0]['shape']
-        if len(input_shape) == 4 and input_shape[1] == 3:  # NCHW: [1, 3, 112, 112]
+        if len(input_shape) == 4 and input_shape[1] == 3:  # NCHW: [1, 3, 160, 160]
             face_nchw = np.transpose(face_np, (2, 0, 1))  # HWC -> CHW
             input_data = np.expand_dims(face_nchw, axis=0).astype(np.float32)
-        else:  # NHWC: [1, 112, 112, 3]
+        else:  # NHWC: [1, 160, 160, 3]
             input_data = np.expand_dims(face_np, axis=0).astype(np.float32)
 
         # Chạy Inference
