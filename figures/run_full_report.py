@@ -76,34 +76,50 @@ def save_confusion_matrix_csv(path, conf_matrix, names, unknown_row=None):
     print(f"  -> CSV: {path}")
 
 
+# Số identity tối đa hiển thị trên ảnh confusion matrix (tránh rối mắt)
+CONFUSION_MATRIX_IMAGE_MAX_LABELS = 12
+
+
 def save_confusion_matrix_image(path, conf_matrix, names, unknown_row=None, title="Confusion Matrix"):
     """
     Xuất confusion matrix ra ảnh PNG: hàng = Actual, cột = Predicted.
+    Chỉ hiển thị tối đa CONFUSION_MATRIX_IMAGE_MAX_LABELS (12) bộ data đầu tiên.
     """
-    n = len(names)
-    labels = list(names) + ["Unknown"]
+    n_full = len(names)
+    k = min(n_full, CONFUSION_MATRIX_IMAGE_MAX_LABELS)
+    names_display = list(names[:k])
+    col_indices = list(range(k)) + [n_full]  # cột 0..k-1 + cột Unknown (index n_full)
+    data_slice = np.array(conf_matrix[:k, :], dtype=float)[:, col_indices] if k else np.zeros((0, len(col_indices)))
+    row_labels = list(names_display)
     if unknown_row is not None:
-        data = np.vstack([conf_matrix, unknown_row.reshape(1, -1)])
-        row_labels = list(names) + ["Unknown"]
-    else:
-        data = np.array(conf_matrix, dtype=float)
-        row_labels = list(names)
+        unknown_slice = np.array([unknown_row[j] for j in col_indices]).reshape(1, -1)
+        data_slice = np.vstack([data_slice, unknown_slice])
+        row_labels = row_labels + ["Unknown"]
+    labels = names_display + ["Unknown"]
+    if data_slice.size == 0:
+        data_slice = np.zeros((1, 1))
+        row_labels = [""]
+        labels = [""]
     try:
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
-        fig, ax = plt.subplots(figsize=(max(8, n * 0.4), max(6, n * 0.35)))
-        im = ax.imshow(data, cmap="Blues", aspect="auto")
-        ax.set_xticks(np.arange(len(labels)))
-        ax.set_yticks(np.arange(len(row_labels)))
+        nr, nc = data_slice.shape
+        fig, ax = plt.subplots(figsize=(max(6, nc * 0.5), max(5, nr * 0.4)))
+        im = ax.imshow(data_slice, cmap="Blues", aspect="auto")
+        ax.set_xticks(np.arange(nc))
+        ax.set_yticks(np.arange(nr))
         ax.set_xticklabels(labels)
         ax.set_yticklabels(row_labels)
         plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
-        for i in range(data.shape[0]):
-            for j in range(data.shape[1]):
-                v = int(data[i, j])
-                ax.text(j, i, str(v) if v > 0 else "", ha="center", va="center", color="black", fontsize=8)
-        ax.set_title(title)
+        for i in range(nr):
+            for j in range(nc):
+                v = int(data_slice[i, j])
+                ax.text(j, i, str(v) if v > 0 else "", ha="center", va="center", color="black", fontsize=9)
+        if k < n_full:
+            ax.set_title(f"{title} (hien thi {k}/{n_full} identity dau tien)")
+        else:
+            ax.set_title(title)
         fig.tight_layout()
         plt.savefig(path, dpi=150, bbox_inches="tight")
         plt.close()
