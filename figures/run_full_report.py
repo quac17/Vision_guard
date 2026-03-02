@@ -42,6 +42,40 @@ def save_csv(path, rows, headers):
     print(f"  -> CSV: {path}")
 
 
+def save_confusion_matrix_csv(path, conf_matrix, names, unknown_row=None):
+    """Xuất confusion matrix ra CSV: hàng = Actual, cột = Predicted."""
+    n = len(names)
+    headers = [""] + list(names) + ["Unknown"]
+    rows = []
+    for i, name in enumerate(names):
+        row = [name] + [int(conf_matrix[i][j]) for j in range(n)] + [int(conf_matrix[i][n])]
+        rows.append(row)
+    if unknown_row is not None:
+        rows.append(["Unknown"] + [int(unknown_row[j]) for j in range(n)] + [int(unknown_row[n])])
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(headers)
+        w.writerows(rows)
+    print(f"  -> CSV: {path}")
+
+
+def save_confusion_matrix_csv(path, conf_matrix, names, unknown_row=None):
+    """Xuất confusion matrix ra CSV: hàng = Actual, cột = Predicted."""
+    n = len(names)
+    headers = [""] + list(names) + ["Unknown"]
+    rows = []
+    for i, name in enumerate(names):
+        row = [name] + [int(conf_matrix[i][j]) for j in range(n)] + [int(conf_matrix[i][n])]
+        rows.append(row)
+    if unknown_row is not None:
+        rows.append(["Unknown"] + [int(unknown_row[j]) for j in range(n)] + [int(unknown_row[n])])
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(headers)
+        w.writerows(rows)
+    print(f"  -> CSV: {path}")
+
+
 def save_confusion_matrix_image(path, conf_matrix, names, unknown_row=None, title="Confusion Matrix"):
     """
     Xuất confusion matrix ra ảnh PNG: hàng = Actual, cột = Predicted.
@@ -181,8 +215,12 @@ def run_all_metrics():
                  train_grouped_rows,
                  ["Identity", "Total Samples", "Correct", "Accuracy (%)"])
 
-    # Confusion matrix Train -> ảnh
+    # Confusion matrix Train -> CSV + ảnh
     if train_cm is not None and train_names:
+        save_confusion_matrix_csv(
+            os.path.join(output_dir, "confusion_matrix_train.csv"),
+            train_cm, train_names, unknown_row=train_unknown_row
+        )
         save_confusion_matrix_image(
             os.path.join(output_dir, "confusion_matrix_train.png"),
             train_cm, train_names, unknown_row=train_unknown_row, title="Confusion Matrix (Train data)"
@@ -211,6 +249,10 @@ def run_all_metrics():
                      detail_rows,
                      ["Actual", "Image", "Predicted", "Distance", "Is Correct"])
         if test_cm is not None and test_names:
+            save_confusion_matrix_csv(
+                os.path.join(output_dir, "confusion_matrix_test.csv"),
+                test_cm, test_names, unknown_row=test_unknown_row
+            )
             save_confusion_matrix_image(
                 os.path.join(output_dir, "confusion_matrix_test.png"),
                 test_cm, test_names, unknown_row=test_unknown_row, title="Confusion Matrix (Test data)"

@@ -54,7 +54,6 @@ uploads/students/*
 
 # Images
 *.jpg
-*.png
 *.webp
 *.pgm
 *.jpeg

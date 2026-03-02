@@ -254,8 +254,10 @@ Ví dụ: `report_20260302_030440` — ngày 02/03/2026, 03:04:40.
 | File | Nội dung |
 | --- | --- |
 | `accuracy.csv` | Tóm tắt độ chính xác **Train data** và **Test data**. |
+| `confusion_matrix_train.csv` | Ma trận nhầm lẫn trên train data (CSV). |
 | `confusion_matrix_train.png` | Ma trận nhầm lẫn trên train data (ảnh PNG). |
-| `confusion_matrix_test.png` | Ma trận nhầm lẫn trên test data (ảnh PNG; có thể có Unknown). |
+| `confusion_matrix_test.csv` | Ma trận nhầm lẫn trên test data (CSV; có thể có Unknown). |
+| `confusion_matrix_test.png` | Ma trận nhầm lẫn trên test data (ảnh PNG). |
 | `train_details_grouped.csv` | Chi tiết độ chính xác theo từng identity (train). |
 | `test_details.csv` | Kết quả từng folder test: Actual, Image, Predicted, Distance, Is Correct. |
 | `system_metrics.csv` | Latency, CPU, RAM, kích thước model, số identity train/test. |
