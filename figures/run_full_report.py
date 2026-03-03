@@ -32,12 +32,12 @@ FAR_MAX_FOR_ROC = 0.15  # Giới hạn FAR <= 15%: ưu tiên tiện dụng nhưn
 
 # Chọn dataset để chạy report (comment dòng không cần chạy)
 DATASETS_TO_RUN = [
-    # "dataset_0",
-    # "dataset_1",
-    # "dataset_2",
+    "dataset_0",
+    "dataset_1",
+    "dataset_2",
     "dataset_3",
-    # "dataset_4",
-    # "dataset_5",
+    "dataset_4",
+    "dataset_5",
 ]   
 
 # ── Bước 0: Tự động cài thư viện ────────────────────────────────────────────

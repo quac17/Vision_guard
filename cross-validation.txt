@@ -1,0 +1,34 @@
+Cross-validation và K-fold với mô hình pretrain
+================================================
+
+Với mô hình chỉ sử dụng pretrain (ví dụ Vision Guard: MobileFaceNet đóng băng, chỉ extract embedding rồi so khớp centroid), câu trả lời ngắn gọn:
+
+--- Có bắt buộc phải dùng cross-validation / K-fold không? ---
+
+Không cần thiết.
+
+- Mô hình pretrain không được train/fine-tune lại trên dữ liệu ứng dụng; nó chỉ đóng vai trò bộ trích đặc trưng cố định.
+- Không có bước ước lượng tham số từ dữ liệu → không có rủi ro overfit lên một cách chia train/test.
+- Đánh giá bằng một (hoặc vài) cách chia train/test cố định (ví dụ dataset_0, dataset_1, dataset_3) là đủ hợp lệ để báo cáo độ chính xác / TAR–FAR–FRR.
+
+Vì vậy cross-validation và K-fold không cần thiết cho chính việc đánh giá mô hình pretrain thuần túy.
+
+--- Khi nào K-fold / cross-validation vẫn có ích? ---
+
+Nên dùng (hoặc cân nhắc) trong các tình huống sau:
+
+1. Có bước training trên dữ liệu riêng
+   Ví dụ: fine-tune MobileFaceNet, hoặc train một classifier nhỏ trên embedding. Khi đó cần ước lượng khả năng generalization và tránh overfit → cross-validation hoặc K-fold là cần thiết.
+
+2. Muốn báo cáo độ ổn định khi ít identity / ít dữ liệu
+   Số lượng identity ít, một cách chia train/test có thể cho kết quả “may/rủi”. K-fold (chia identity thành K phần, lần lượt 1 phần làm test, K−1 phần làm train) giúp có K lần đánh giá và báo cáo trung bình ± độ lệch (ví dụ 92% ± 3%) thay vì một con số đơn lẻ.
+
+3. Cần chọn siêu tham số (hyperparameter)
+   Ví dụ: chọn threshold, số frame tối thiểu để verify. Nếu chọn dựa trên một tập validation duy nhất thì dễ bị “ăn may”. K-fold hoặc hold-out validation giúp chọn hyperparameter ổn định hơn.
+
+Tóm lại: với chỉ pretrain + matching, K-fold không bắt buộc; với có train/fine-tune hoặc cần ước lượng ổn định / chọn hyperparameter thì nên dùng K-fold hoặc cross-validation.
+
+--- Gợi ý cho hệ thống chỉ dùng pretrain (ví dụ Vision Guard) ---
+
+- Giữ đánh giá hiện tại (nhiều dataset, mỗi dataset một train/test cố định) là hợp lý và đủ để đánh giá mô hình pretrain + centroid.
+- Nếu muốn chặt chẽ hơn (đặc biệt khi số identity nhỏ): có thể thêm K-fold theo identity (chia người thành K fold, mỗi fold một lần làm test), chạy pipeline đánh giá (accuracy, TAR, FAR, FRR) cho từng fold rồi báo cáo mean ± std. Đó là bước nâng cao, không bắt buộc cho pretrain thuần túy.
