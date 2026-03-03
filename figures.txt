@@ -1,75 +1,34 @@
-# DANH SÁCH CÁC THÔNG SỐ VÀ HÌNH ẢNH CẦN THU THẬP CHO ĐỒ ÁN (VISION GUARD BUS)
+1. Ma trận nhầm lẫn (Confusion Matrix) 2×2
+Đây là bảng "tổng sắp" kết quả. Thay vì bối rối với hàng ngàn ID, bạn chỉ cần chia thành 2 nhóm: Người đã biết (Known) và Người lạ (Unknown).
 
-Dưới đây là các thông số kỹ thuật (KPIs) và hình ảnh minh họa quan trọng cần có trong báo cáo đồ án để chứng minh tính hiệu quả và độ ổn định của hệ thống.
+TP (True Positive): Máy bảo là "Hùng", và đúng là Hùng. (Thành công)
 
----
+FP (False Positive): Máy bảo là "Hùng", nhưng thực tế là người lạ. (Rủi ro an ninh)
 
-## 1. Thông số Hiệu năng AI (AI Performance)
+FN (False Negative): Máy bảo "Unknown", nhưng thực tế là Hùng. (Gây phiền hà)
 
-- **Thời gian Inference (Inference Latency):**
-  - *Mô tả:* Thời gian trung bình để model MobileFaceNet trích xuất 1 vector đặc trưng (512-dim).
-  - *So sánh:* PC (PyTorch) vs Raspberry Pi 4 (TFLite).
-  - *Cách thu thập:* Sử dụng thư viện `time` bao quanh hàm `interpreter.invoke()` trên Pi và model forward trên PC. Chạy 100 lần và lấy trung bình.
+TN (True Negative): Máy bảo "Unknown", và đúng là người lạ. (Thành công)
 
-- **Kích thước Model (Model Footprint):**
-  - *Mô tả:* Dung lượng file .pth (gốc) và file .tflite (sau khi chuyển đổi/quantize).
-  - *Cách thu thập:* `os.path.getsize()`.
+2. TAR, FAR và FRR: Bộ ba đo lường hiệu năng
+Các chỉ số này giúp bạn trả lời các câu hỏi thực tế:
 
-- **Ngưỡng so khớp tối ưu (Optimal Threshold):**
-  - *Mô tả:* Biểu đồ thể hiện khoảng cách Euclidean. 
-  - *Hình ảnh:* Histogram khoảng cách giữa các cặp ảnh cùng một người (Intra-class) và khác người (Inter-class). Điểm giao nhau chính là ngưỡng (Threshold) tối ưu (dự án đang dùng 1.0).
+TAR (True Acceptance Rate): "Trong 100 lần sinh viên quét mặt, có bao nhiêu lần máy nhận ra đúng?"
 
----
+Mục tiêu: Càng cao càng tốt (gần 100%).
 
-## 2. Thông số Độ chính xác (Accuracy Metrics)
+FAR (False Acceptance Rate): "Trong 100 người lạ đi ngang qua, có bao nhiêu người máy cho phép vào?"
 
-- **Ma trận nhầm lẫn (Confusion Matrix):**
-  - *Mô tả:* Thể hiện khả năng nhận diện đúng/sai cho từng học sinh trong tập test.
-  - *Cách thu thập:* Chạy nhận diện trên một tập data test (không có trong data training) và đếm số lần True Positive, False Positive.
+Mục tiêu: Càng thấp càng tốt (ví dụ 0.01%). Đây là chỉ số quan trọng nhất cho tính Bảo mật.
 
-- **Tỷ lệ FAR (False Acceptance Rate) và FRR (False Rejection Rate):**
-  - *Mô tả:* Tỷ lệ nhận nhầm người lạ và tỷ lệ từ chối người quen.
-  - *Cách thu thập:* Thử nghiệm với người không có trong database và người có trong database với các góc chụp khác nhau.
+FRR (False Rejection Rate): "Trong 100 lần sinh viên quét mặt, bao nhiêu lần họ bị máy đuổi ra?"
 
----
+Mục tiêu: Thấp. Đây là chỉ số đo tính Tiện dụng.
 
-## 3. Thông số Tối ưu hóa Dữ liệu (Data Optimization)
+3. Đường cong ROC và Điểm EER (Điểm cân bằng)
+Đây là phần nâng cao để bạn tối ưu hóa ngưỡng (Threshold) 0.8 mà bạn đã chọn.
 
-- **Hiệu quả nén ảnh (Storage Efficiency):**
-  - *Mô tả:* So sánh dung lượng bộ dữ liệu ảnh gốc (.pgm, .jpg) so với sau khi chuyển sang .webp.
-  - *Hình ảnh:* Biểu đồ cột thể hiện "Original Size" vs "Optimized Size".
+ROC Curve: Khi bạn thay đổi ngưỡng (ví dụ từ 0.5 lên 0.9), TAR và FAR sẽ thay đổi theo. Đường cong này vẽ lại mối quan hệ đó. Một mô hình tốt là đường cong "áp sát" vào góc trên bên trái.
 
-- **Kích thước Database local (JSON size):**
-  - *Mô tả:* Tốc độ tăng trưởng của file `face_embeddings.json` khi số lượng học sinh tăng lên (ví dụ: 10, 50, 100 người).
+EER (Equal Error Rate): Là điểm mà tại đó tỉ lệ nhận diện nhầm (FAR) bằng đúng tỉ lệ từ chối nhầm (FRR).
 
----
-
-## 4. Thông số Tài nguyên Thiết bị Edge (System Resources on Pi 4)
-
-- **Mức chiếm dụng CPU & RAM:**
-  - *Mô tả:* CPU/RAM khi ở trạng thái chờ và khi đang xử lý nhận diện AI.
-  - *Cách thu thập:* Lệnh `top` hoặc thư viện `psutil` trong Python trên Raspberry Pi.
-
-- **Thời gian Tiền xử lý (Pre-processing Time):**
-  - *Mô tả:* Thời gian thực hiện Gaussian Blur, Gray scaling và Resize ảnh chuẩn bị cho AI.
-  - *Cách thu thập:* Log lại thời gian bắt đầu và kết thúc giai đoạn `Pre-process` trong `hardware-control/main.py`.
-
----
-
-## 5. Thông số Hệ thống Tổng thể (End-to-End Performance)
-
-- **Thời gian điểm danh tổng thể (Latency):**
-  - *Mô tả:* Từ lúc nhấn phím Space -> Chụp ảnh -> AI xử lý -> Hiển thị kết quả. (Mục tiêu: < 2 giây).
-
-- **Độ trễ API (API Round-trip Time):**
-  - *Mô tả:* Thời gian gửi kết quả từ Pi về Backend Server và nhận phản hồi thành công.
-
----
-
-## GỢI Ý MÔ TẢ CÁC HÌNH ẢNH (FIGURES DESCRIPTION)
-
-1. **Figure 1: Kiến trúc mô hình Edge Computing.** (Sơ đồ kết nối PC - Pi 4 - Backend).
-2. **Figure 2: Phân phối khoảng cách Euclidean.** (Chứng minh tại sao chọn Threshold = 1.0).
-3. **Figure 3: Ma trận nhầm lẫn (Confusion Matrix).** (Đánh giá độ chính xác thực tế).
-4. **Figure 4: Biểu đồ so sánh thời gian xử lý.** (PC vs Pi 4).
-5. **Figure 5: Ảnh minh họa các bước tiền xử lý.** (Ảnh gốc -> Grayscale -> Blurred -> Cropped Face).
+Ý nghĩa: EER càng thấp, mô hình càng mạnh. Nếu EER của bạn cao, dù bạn chỉnh ngưỡng thế nào thì hệ thống vẫn sẽ bị lỗi nhiều.

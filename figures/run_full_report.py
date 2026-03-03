@@ -1,9 +1,11 @@
 """
-run_full_report.py — Tự động xuất toàn bộ số liệu báo cáo đồ án Vision Guard
-===========================================================================
-- Train data & Test data đều đánh giá bằng FaceRecognizer (edge pipeline).
-- Confusion matrix xuất ra ảnh PNG.
-===========================================================================
+run_full_report.py — Tự động xuất số liệu báo cáo Vision Guard (multi-dataset)
+===============================================================================
+- Nguồn data: figures/data/<dataset_X>/train_data và test_data (X = 1..5).
+- Chạy từng dataset trong DATASETS_TO_RUN; comment dòng không cần chạy.
+- Kết quả: figures/result/<dataset_X>/report_YYYYMMDD_HHMMSS/ (CSV + PNG).
+- Train & Test đều đánh giá bằng FaceRecognizer (edge pipeline).
+===============================================================================
 """
 import os
 import sys
@@ -20,11 +22,21 @@ for _p in [FIGURES_DIR, SERVER_DIR]:
         sys.path.insert(0, _p)
 
 # ── Cấu hình ────────────────────────────────────────────────────────────────
-TRAIN_DATA_DIR = os.path.join(FIGURES_DIR, "train_data")      
-TEST_DATA_DIR  = os.path.join(FIGURES_DIR, "test_data")       
+DATA_ROOT       = os.path.join(FIGURES_DIR, "data")           # data/dataset_1/train_data, test_data; ...
+RESULT_ROOT     = os.path.join(FIGURES_DIR, "result")         # result/dataset_1/report_YYYYMMDD_HHMMSS/
 MODEL_PATH      = os.path.join(SERVER_DIR, "models/mobilefacenet.tflite")
 EDGE_MODEL_PATH = os.path.join(FIGURES_DIR, "../edge-device-pi4/ai-recognition/models/mobilefacenet.tflite")
-EDGE_THRESHOLD  = 0.45  # Cosine distance (dùng cho cả train_data và test_data)   
+EDGE_THRESHOLD  = 0.45  # Cosine distance (dùng cho cả train_data và test_data)
+
+# Chọn dataset để chạy report (comment dòng không cần chạy)
+DATASETS_TO_RUN = [
+    "dataset_0",
+    # "dataset_1",
+    # "dataset_2",
+    # "dataset_3",
+    # "dataset_4",
+    # "dataset_5",
+]   
 
 # ── Bước 0: Tự động cài thư viện ────────────────────────────────────────────
 import setup_deps
@@ -42,90 +54,61 @@ def save_csv(path, rows, headers):
     print(f"  -> CSV: {path}")
 
 
-def save_confusion_matrix_csv(path, conf_matrix, names, unknown_row=None):
-    """Xuất confusion matrix ra CSV: hàng = Actual, cột = Predicted."""
-    n = len(names)
-    headers = [""] + list(names) + ["Unknown"]
-    rows = []
-    for i, name in enumerate(names):
-        row = [name] + [int(conf_matrix[i][j]) for j in range(n)] + [int(conf_matrix[i][n])]
-        rows.append(row)
-    if unknown_row is not None:
-        rows.append(["Unknown"] + [int(unknown_row[j]) for j in range(n)] + [int(unknown_row[n])])
-    with open(path, "w", newline="", encoding="utf-8") as f:
-        w = csv.writer(f)
-        w.writerow(headers)
-        w.writerows(rows)
-    print(f"  -> CSV: {path}")
-
-
-def save_confusion_matrix_csv(path, conf_matrix, names, unknown_row=None):
-    """Xuất confusion matrix ra CSV: hàng = Actual, cột = Predicted."""
-    n = len(names)
-    headers = [""] + list(names) + ["Unknown"]
-    rows = []
-    for i, name in enumerate(names):
-        row = [name] + [int(conf_matrix[i][j]) for j in range(n)] + [int(conf_matrix[i][n])]
-        rows.append(row)
-    if unknown_row is not None:
-        rows.append(["Unknown"] + [int(unknown_row[j]) for j in range(n)] + [int(unknown_row[n])])
-    with open(path, "w", newline="", encoding="utf-8") as f:
-        w = csv.writer(f)
-        w.writerow(headers)
-        w.writerows(rows)
-    print(f"  -> CSV: {path}")
-
-
-# Số identity tối đa hiển thị trên ảnh confusion matrix (tránh rối mắt)
-CONFUSION_MATRIX_IMAGE_MAX_LABELS = 12
-
-
-def save_confusion_matrix_image(path, conf_matrix, names, unknown_row=None, title="Confusion Matrix"):
+def _compute_binary_confusion(report_list, known_set):
     """
-    Xuất confusion matrix ra ảnh PNG: hàng = Actual, cột = Predicted.
-    Chỉ hiển thị tối đa CONFUSION_MATRIX_IMAGE_MAX_LABELS (12) bộ data đầu tiên.
+    Từ report (list dict actual, predicted) và set known (identity trong DB),
+    trả về TP, TN, FP, FN. Known = người đã biết, Stranger = người lạ (Unknown).
     """
-    n_full = len(names)
-    k = min(n_full, CONFUSION_MATRIX_IMAGE_MAX_LABELS)
-    names_display = list(names[:k])
-    col_indices = list(range(k)) + [n_full]  # cột 0..k-1 + cột Unknown (index n_full)
-    data_slice = np.array(conf_matrix[:k, :], dtype=float)[:, col_indices] if k else np.zeros((0, len(col_indices)))
-    row_labels = list(names_display)
-    if unknown_row is not None:
-        unknown_slice = np.array([unknown_row[j] for j in col_indices]).reshape(1, -1)
-        data_slice = np.vstack([data_slice, unknown_slice])
-        row_labels = row_labels + ["Unknown"]
-    labels = names_display + ["Unknown"]
-    if data_slice.size == 0:
-        data_slice = np.zeros((1, 1))
-        row_labels = [""]
-        labels = [""]
+    tp = tn = fp = fn = 0
+    for r in report_list:
+        actual = r.get("actual", "")
+        pred = r.get("predicted", "Unknown")
+        actual_known = actual in known_set
+        pred_known = pred != "Unknown" and "Unknown" not in str(pred)
+        if actual_known and pred_known:
+            tp += 1
+        elif actual_known and not pred_known:
+            fn += 1
+        elif not actual_known and pred_known:
+            fp += 1
+        else:
+            tn += 1
+    return tp, tn, fp, fn
+
+
+def save_confusion_matrix_2x2_image(path, tp, tn, fp, fn, title="Confusion Matrix (Known / Stranger)"):
+    """
+    Xuất ảnh ma trận nhầm lẫn 2x2: Known vs Stranger.
+    Hàng = Actual, Cột = Predicted. TP & TN cùng màu (đúng), FP và FN mỗi loại một màu khác.
+    """
     try:
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
-        nr, nc = data_slice.shape
-        fig, ax = plt.subplots(figsize=(max(6, nc * 0.5), max(5, nr * 0.4)))
-        im = ax.imshow(data_slice, cmap="Blues", aspect="auto")
-        ax.set_xticks(np.arange(nc))
-        ax.set_yticks(np.arange(nr))
-        ax.set_xticklabels(labels)
-        ax.set_yticklabels(row_labels)
-        plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
-        for i in range(nr):
-            for j in range(nc):
-                v = int(data_slice[i, j])
-                ax.text(j, i, str(v) if v > 0 else "", ha="center", va="center", color="black", fontsize=9)
-        if k < n_full:
-            ax.set_title(f"{title} (hien thi {k}/{n_full} identity dau tien)")
-        else:
-            ax.set_title(title)
+        from matplotlib.colors import ListedColormap
+        # 0 = TP/TN (đúng) -> xanh lá; 1 = FP -> cam; 2 = FN -> đỏ
+        cmap = ListedColormap(["#27ae60", "#e67e22", "#c0392b"])  # green, orange, red
+        # Ma trận: [Actual Known: TP, FN; Actual Stranger: FP, TN]. Giá trị 0/1/2 cho màu.
+        color_matrix = np.array([[0, 2], [1, 0]])  # (0,0)=TP->0, (0,1)=FN->2, (1,0)=FP->1, (1,1)=TN->0
+        value_matrix = np.array([[tp, fn], [fp, tn]])
+        fig, ax = plt.subplots(figsize=(5, 4))
+        im = ax.imshow(color_matrix, cmap=cmap, aspect="auto", vmin=0, vmax=2)
+        ax.set_xticks([0, 1])
+        ax.set_yticks([0, 1])
+        ax.set_xticklabels(["Predicted\nKnown", "Predicted\nStranger"])
+        ax.set_yticklabels(["Actual Known", "Actual Stranger"])
+        for i in range(2):
+            for j in range(2):
+                v = int(value_matrix[i, j])
+                ax.text(j, i, f"{v}\n({'TP' if (i,j)==(0,0) else 'FN' if (i,j)==(0,1) else 'FP' if (i,j)==(1,0) else 'TN'})",
+                        ha="center", va="center", color="white", fontsize=11, fontweight="bold")
+        ax.set_title(title)
         fig.tight_layout()
         plt.savefig(path, dpi=150, bbox_inches="tight")
         plt.close()
         print(f"  -> Image: {path}")
     except Exception as e:
-        print(f"  LOI xuat anh confusion matrix: {e}")
+        print(f"  LOI xuat anh confusion 2x2: {e}")
 
 
 def dir_count(path):
@@ -133,86 +116,52 @@ def dir_count(path):
     return len([d for d in os.listdir(path) if os.path.isdir(os.path.join(path, d))])
 
 
-def run_all_metrics():
-    # Tạo folder train/test nếu chưa có
-    for d in [TRAIN_DATA_DIR, TEST_DATA_DIR]:
-        os.makedirs(d, exist_ok=True)
-
-    n_train = dir_count(TRAIN_DATA_DIR)
-    n_test  = dir_count(TEST_DATA_DIR)
+def run_report_for_paths(train_data_dir, test_data_dir, output_dir):
+    """Chạy đủ 5 bước report với một cặp train_data_dir, test_data_dir; ghi ra output_dir."""
+    os.makedirs(output_dir, exist_ok=True)
+    n_train = dir_count(train_data_dir)
+    n_test  = dir_count(test_data_dir)
 
     if n_train == 0:
-        print("\n[LOI] Khong co du lieu trong figures/train_data/")
-        sys.exit(1)
+        print(f"\n[LOI] Khong co du lieu trong {train_data_dir}")
+        return
 
-    # Tạo folder output
-    ts         = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_dir = os.path.join(FIGURES_DIR, f"report_{ts}")
-    os.makedirs(output_dir, exist_ok=True)
-
-    print("\n" + "="*68)
-    print("  VISION GUARD — RUN FULL REPORT")
     print(f"  Ket qua: {output_dir}")
-    print("="*68)
 
     system_rows = []
-
-    # ──────────────────────────────────────────────────────────
-    # STEP 1 — System Metrics
-    # ──────────────────────────────────────────────────────────
     print("\n[STEP 1] THU THAP THONG SO HE THONG")
-    
     system_rows.append(["Train Identities",  n_train])
     system_rows.append(["Test Identities",   n_test])
-    
-    # Model size
     model_mb = metrics.get_model_info(MODEL_PATH)
     system_rows.append(["Model Size (MB)", round(model_mb, 3)])
-
-    # CPU/RAM
     sys_res = metrics.monitor_system()
     if sys_res:
         cpu, ram = sys_res
         system_rows.append(["CPU Usage (%)", cpu])
         system_rows.append(["RAM Usage (%)", ram])
-
-    # Latency
-    lat_pc = metrics.measure_inference_time(MODEL_PATH, data_sample_dir=TRAIN_DATA_DIR, is_tflite=True, iterations=100)
+    lat_pc = metrics.measure_inference_time(MODEL_PATH, data_sample_dir=train_data_dir, is_tflite=True, iterations=100)
     system_rows.append(["Inference Latency PC (ms)", round(lat_pc, 2)])
-
-    # Pre-processing
-    preproc_ms = metrics.measure_preprocessing_time(TRAIN_DATA_DIR, iterations=50)
+    preproc_ms = metrics.measure_preprocessing_time(train_data_dir, iterations=50)
     system_rows.append(["Preprocessing Time (ms)", round(preproc_ms, 2)])
-
     save_csv(os.path.join(output_dir, "system_metrics.csv"), system_rows, ["Metric", "Value"])
 
-    # ──────────────────────────────────────────────────────────
-    # STEP 2 — Face Database
-    # ──────────────────────────────────────────────────────────
     print("\n[STEP 2] XAY DUNG FACE DATABASE...")
-    database = accuracy_tools.build_embeddings_from_train_data(TRAIN_DATA_DIR, MODEL_PATH)
-    
+    database = accuracy_tools.build_embeddings_from_train_data(train_data_dir, MODEL_PATH)
     db_stats = metrics.get_db_stats(database)
     save_csv(os.path.join(output_dir, "database_stats.csv"),
              [["Total Identities", db_stats["num_ids"]],
               ["Embedding Dimension", db_stats["dimension"], "512-dim"]],
              ["Metric", "Value", "Note"])
 
-    # Ghi DB tạm để dùng cho cả Train và Test (FaceRecognizer)
     temp_db_path = os.path.join(output_dir, "temp_face_embeddings.json")
     edge_model_used = EDGE_MODEL_PATH if os.path.exists(EDGE_MODEL_PATH) else MODEL_PATH
     if not os.path.exists(EDGE_MODEL_PATH):
         print(f"  CANH BAO: Khong thay model edge, dung MODEL_PATH server.")
 
-    # ──────────────────────────────────────────────────────────
-    # STEP 3 — Accuracy trên Train data (FaceRecognizer, cùng pipeline edge)
-    # ──────────────────────────────────────────────────────────
     print("\n[STEP 3] DANH GIA TREN TRAIN DATA (FaceRecognizer)")
     train_acc, train_cm, train_names, train_report, train_unknown_row = accuracy_tools.test_accuracy_edge_via_recognizer(
-        TRAIN_DATA_DIR, edge_model_used, database, temp_db_path, threshold=EDGE_THRESHOLD
+        train_data_dir, edge_model_used, database, temp_db_path, threshold=EDGE_THRESHOLD
     )
-
-    # Train details gộp theo identity (mỗi folder = 1 identity)
     train_grouped_rows = []
     correct_by_name = {}
     for r in train_report:
@@ -230,26 +179,18 @@ def run_all_metrics():
         save_csv(os.path.join(output_dir, "train_details_grouped.csv"),
                  train_grouped_rows,
                  ["Identity", "Total Samples", "Correct", "Accuracy (%)"])
+    known_set = set(database.keys())
+    tp_tr, tn_tr, fp_tr, fn_tr = _compute_binary_confusion(train_report, known_set)
+    save_confusion_matrix_2x2_image(
+        os.path.join(output_dir, "confusion_matrix_2x2_train.png"),
+        tp_tr, tn_tr, fp_tr, fn_tr, title="Confusion Matrix 2x2 — Train (Known / Stranger)"
+    )
 
-    # Confusion matrix Train -> CSV + ảnh
-    if train_cm is not None and train_names:
-        save_confusion_matrix_csv(
-            os.path.join(output_dir, "confusion_matrix_train.csv"),
-            train_cm, train_names, unknown_row=train_unknown_row
-        )
-        save_confusion_matrix_image(
-            os.path.join(output_dir, "confusion_matrix_train.png"),
-            train_cm, train_names, unknown_row=train_unknown_row, title="Confusion Matrix (Train data)"
-        )
-
-    # ──────────────────────────────────────────────────────────
-    # STEP 4 — Accuracy trên Test data & Details
-    # ──────────────────────────────────────────────────────────
     test_acc = 0
     if n_test > 0:
         print("\n[STEP 4] DANH GIA TREN TEST DATA (FaceRecognizer)")
         test_acc, test_cm, test_names, unknown_report, test_unknown_row = accuracy_tools.test_accuracy_edge_via_recognizer(
-            TEST_DATA_DIR, edge_model_used, database, temp_db_path, threshold=EDGE_THRESHOLD
+            test_data_dir, edge_model_used, database, temp_db_path, threshold=EDGE_THRESHOLD
         )
         detail_rows = []
         for r in unknown_report:
@@ -264,27 +205,43 @@ def run_all_metrics():
             save_csv(os.path.join(output_dir, "test_details.csv"),
                      detail_rows,
                      ["Actual", "Image", "Predicted", "Distance", "Is Correct"])
-        if test_cm is not None and test_names:
-            save_confusion_matrix_csv(
-                os.path.join(output_dir, "confusion_matrix_test.csv"),
-                test_cm, test_names, unknown_row=test_unknown_row
-            )
-            save_confusion_matrix_image(
-                os.path.join(output_dir, "confusion_matrix_test.png"),
-                test_cm, test_names, unknown_row=test_unknown_row, title="Confusion Matrix (Test data)"
-            )
+        tp_te, tn_te, fp_te, fn_te = _compute_binary_confusion(unknown_report, known_set)
+        save_confusion_matrix_2x2_image(
+            os.path.join(output_dir, "confusion_matrix_2x2_test.png"),
+            tp_te, tn_te, fp_te, fn_te, title="Confusion Matrix 2x2 — Test (Known / Stranger)"
+        )
 
-    # ──────────────────────────────────────────────────────────
-    # STEP 5 — Accuracy Summary
-    # ──────────────────────────────────────────────────────────
     accuracy_rows = [
         ["Train data", f"{round(train_acc, 2)}%"],
         ["Test data", f"{round(test_acc, 2)}%" if n_test > 0 else "N/A"]
     ]
     save_csv(os.path.join(output_dir, "accuracy.csv"), accuracy_rows, ["Phase", "Accuracy"])
+    print(f"  HOAN TAT: {output_dir}\n")
 
+
+def run_all_metrics():
+    """Chạy report lần lượt cho từng dataset trong DATASETS_TO_RUN. Kết quả: result/<dataset>/report_YYYYMMDD_HHMMSS/"""
+    os.makedirs(RESULT_ROOT, exist_ok=True)
     print("\n" + "="*68)
-    print(f"  HOAN TAT! Ket qua tai: {output_dir}")
+    print("  VISION GUARD — RUN FULL REPORT (multi-dataset)")
+    print(f"  Data: {DATA_ROOT}  |  Result: {RESULT_ROOT}")
+    print("="*68)
+
+    for dataset_name in DATASETS_TO_RUN:
+        train_data_dir = os.path.join(DATA_ROOT, dataset_name, "train_data")
+        test_data_dir  = os.path.join(DATA_ROOT, dataset_name, "test_data")
+        if not os.path.isdir(train_data_dir):
+            print(f"\n  BO QUA '{dataset_name}': khong thay thu muc {train_data_dir}")
+            continue
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_dir = os.path.join(RESULT_ROOT, dataset_name, f"report_{ts}")
+        print("\n" + "="*68)
+        print(f"  DATASET: {dataset_name}")
+        print("="*68)
+        run_report_for_paths(train_data_dir, test_data_dir, output_dir)
+
+    print("="*68)
+    print("  TAT CA DATASET DA CHAY XONG.")
     print("="*68)
 
 

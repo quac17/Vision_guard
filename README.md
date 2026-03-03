@@ -60,19 +60,23 @@ Bài báo trình bày:
 
 ### Dataset (đánh giá thực nghiệm)
 
-| Mục | Giá trị | Ghi chú |
-| --- | --- | --- |
-| **Học sinh train** | 33 | Số danh tính trong database embeddings |
-| **Ảnh/người (train)** | ~5–9 ảnh | Thay đổi theo identity (xem `train_details_grouped.csv`) |
-| **Người test** | 36 | Số identity trong tập test (gồm cả người đã train và người chưa gặp) |
-| **Ảnh test** | 72 | Tổng số ảnh trong phase Edge (đánh giá closed-set / open-set) |
+Đánh giá được thực hiện trên **nhiều dataset** trong `figures/data/`. Mỗi dataset có cấu trúc `train_data/` và `test_data/` (mỗi thư mục con = một identity, chứa ảnh khuôn mặt). Quy mô thay đổi theo từng bộ dữ liệu:
+
+| Mục | Ví dụ (dataset_0) | Ví dụ (dataset_1) | Ghi chú |
+| --- | :---: | :---: | --- |
+| **Số identity train** | 33 | 100 | Số danh tính trong database embeddings (số folder trong `train_data/`). |
+| **Số folder test** | 36 | 120 | Số folder trong `test_data/` (gồm người trong DB và/hoặc người lạ). |
+| **Ảnh/người (train)** | thay đổi | thay đổi | Xem chi tiết trong `result/<dataset_X>/report_.../train_details_grouped.csv`. |
+
+Kết quả từng dataset được xuất riêng trong `figures/result/<dataset_X>/report_YYYYMMDD_HHMMSS/` (accuracy, confusion 2×2, system_metrics, test_details).
 
 ### Đánh giá thực nghiệm
 
-- **Độ chính xác:** TAR (True Accept Rate), recall trên tập train; độ chính xác nhận diện trên tập test (Edge phase).
+- **Độ chính xác:** Accuracy trên **train data** và **test data** (theo folder), pipeline FaceRecognizer (cosine 0.45); đánh giá từng dataset, ghi trong `accuracy.csv`.
+- **Ma trận nhầm lẫn 2×2:** Phân nhóm **Known** (người trong DB) vs **Stranger** (người lạ); xuất TP, TN, FP, FN dạng ảnh PNG (`confusion_matrix_2x2_train.png`, `confusion_matrix_2x2_test.png`).
 - **Threshold sensitivity:** Ngưỡng so khớp (mặc định 0.45 cho cosine distance) có thể điều chỉnh theo FAR/FRR.
-- **Latency:** Inference (ms/frame), preprocessing (ms).
-- **Tài nguyên:** CPU (%), RAM (%).
+- **Latency:** Inference (ms/frame), preprocessing (ms) — ghi trong `system_metrics.csv` của mỗi report.
+- **Tài nguyên:** CPU (%), RAM (%) — đo khi chạy pipeline, phụ thuộc quy mô dataset.
 - **Lighting robustness:** Face detection DNN + fallback Haar, tiền xử lý CLAHE khi ánh sáng kém.
 
 Cấu trúc logic, trình bày rõ ràng phù hợp báo cáo khoa học.
@@ -81,44 +85,44 @@ Cấu trúc logic, trình bày rõ ràng phù hợp báo cáo khoa học.
 
 ## 📊 Kết quả thực nghiệm (Experimental Results)
 
-Số liệu lấy từ **report**: `figures/report_20260302_030440/` (cập nhật 02/03/2026).
+Số liệu lấy từ **report** trong `figures/result/` (mỗi dataset có thư mục `report_YYYYMMDD_HHMMSS` chứa CSV và ảnh confusion 2×2). Dưới đây là ví dụ từ **dataset_0** và **dataset_1**.
 
 ### 1. Độ chính xác (Accuracy)
 
-| Giai đoạn | Độ chính xác | Ghi chú |
-| :--- | :---: | :--- |
-| **Train data** | **100.0%** | Đánh giá trên tập train (33 folder), pipeline FaceRecognizer (cosine 0.45). |
-| **Test data** | **100.0%** | Đánh giá trên tập test (36 folder), cùng pipeline edge. |
+| Dataset (ví dụ) | Train data | Test data | Ghi chú |
+| :--- | :---: | :---: | :--- |
+| **dataset_0** | **100.0%** | **100.0%** | 33 train, 36 test folder; pipeline FaceRecognizer (cosine 0.45). |
+| **dataset_1** | **91.0%** | **92.0%** | 100 train, 120 test folder; cùng pipeline edge. |
 
 ### 2. Thông số Cơ sở dữ liệu & Model
 
-| Thông số | Giá trị | Ý nghĩa |
-| :--- | :--- | :--- |
-| **Total Identities** | 33 | Số danh tính trong database embeddings. |
-| **Embedding Dimension** | 512 | Số chiều vector đặc trưng (MobileFaceNet), 512-dim. |
-| **Input size** | **160×160** | Kích thước ảnh mặt đầu vào model (resize trước inference). |
-| **Model Size** | **44.88 MB** | Kích thước file `.tflite` (môi trường đo report). |
+| Thông số | dataset_0 | dataset_1 | Ý nghĩa |
+| :--- | :---: | :---: | :--- |
+| **Total Identities** | 33 | 100 | Số danh tính trong database embeddings. |
+| **Embedding Dimension** | 512 | 512 | Số chiều vector đặc trưng (MobileFaceNet). |
+| **Input size** | **160×160** | **160×160** | Kích thước ảnh mặt đầu vào model. |
+| **Model Size** | **44.88 MB** | **44.88 MB** | Kích thước file `.tflite` (môi trường đo). |
 
 ### 3. Hiệu năng Hệ thống (System Metrics)
 
-| Thông số | Giá trị | Ý nghĩa |
-| :--- | :--- | :--- |
-| **Train Identities** | 33 | Số folder trong `figures/train_data/`. |
-| **Test Identities** | 36 | Số folder trong `figures/test_data/`. |
-| **Inference Latency** | **72.98 ms** | Thời gian trích xuất embedding/frame (TFLite, 100 lần). |
-| **Preprocessing Time** | **1.39 ms** | Tiền xử lý ảnh (gray, blur, resize). |
-| **CPU Usage** | **19.6%** | Mức sử dụng CPU khi chạy pipeline. |
-| **RAM Usage** | **58.5%** | Mức sử dụng RAM trong quá trình đo. |
+| Thông số | dataset_0 | dataset_1 | Ý nghĩa |
+| :--- | :---: | :---: | :--- |
+| **Train Identities** | 33 | 100 | Số folder trong `data/<dataset>/train_data/`. |
+| **Test Identities** | 36 | 120 | Số folder trong `data/<dataset>/test_data/`. |
+| **Inference Latency** | **138.57 ms** | **163.35 ms** | Thời gian trích xuất embedding/frame (TFLite, 100 lần). |
+| **Preprocessing Time** | **3.43 ms** | **7.28 ms** | Tiền xử lý ảnh (gray, blur, resize). |
+| **CPU Usage** | **27.5%** | **43.5%** | Mức sử dụng CPU khi chạy pipeline. |
+| **RAM Usage** | **67.2%** | **80.1%** | Mức sử dụng RAM trong quá trình đo. |
 
 ### 4. Tóm tắt kết quả (theo mẫu bài báo)
 
-- **Inference:** ~73 ms/frame (TFLite trên PC; trên Pi có thể tương đương hoặc cao hơn).
+- **Inference:** ~140–165 ms/frame (TFLite trên PC, tùy kích thước dataset); trên Pi có thể tương đương hoặc cao hơn.
 - **Attendance verification:** Xác nhận điểm danh trong thời gian cấp giây (< 0.5 s khi dùng multi-frame).
-- **CPU:** ~20%, **RAM:** ~59% (môi trường report).
+- **CPU / RAM:** Phụ thuộc quy mô dataset (ví dụ 27–43% CPU, 67–80% RAM).
 - **Model size:** ~45 MB (file đo được); có thể dùng bản nén nhỏ hơn cho Pi.
-- **DB size:** Nhỏ gọn (file JSON embeddings với 33 người × 512-d).
+- **DB size:** Nhỏ gọn (file JSON embeddings, 512-d/người).
 
-Hệ thống hoạt động realtime trên embedded device (Raspberry Pi 4).
+Hệ thống hoạt động realtime trên embedded device (Raspberry Pi 4). Các report đầy đủ (accuracy, confusion 2×2, system_metrics, test_details) nằm trong `figures/result/<dataset_X>/report_YYYYMMDD_HHMMSS/`.
 
 ---
 
@@ -192,7 +196,9 @@ Vision_guard/
 │   └── ai-recognition/           # Engine nhận diện (TFLite) & Database Local
 ├── backend-server/              # Hệ thống API quản lý trung tâm (FastAPI)
 ├── frontend-web/                 # Dashboard quản lý Web
-└── figures/                     # Báo cáo thực nghiệm (report_YYYYMMDD_HHMMSS)
+└── figures/                     # Script báo cáo & data/result multi-dataset
+    ├── data/                    # Nguồn data: dataset_1..5, mỗi dataset có train_data/ và test_data/
+    └── result/                  # Kết quả: result/<dataset_X>/report_YYYYMMDD_HHMMSS/
 ```
 
 ---
@@ -219,63 +225,106 @@ Vision_guard/
 
 ---
 
-## 📂 Quản lý Báo cáo (Report Management)
+## 📂 Dataset và Quản lý Báo cáo (Report Management)
 
-Kết quả thực nghiệm được xuất tự động vào thư mục `figures/`.
+### Cấu trúc Dataset (`figures/data/`)
+
+Dữ liệu đánh giá được tổ chức theo **nhiều dataset**. Mỗi dataset gồm hai thư mục giống cấu trúc cũ:
+
+```text
+figures/data/
+├── dataset_1/
+│   ├── train_data/    # Các folder identity (tên người), mỗi folder chứa ảnh khuôn mặt
+│   └── test_data/     # Các folder identity (có thể có người trong DB hoặc người lạ)
+├── dataset_2/
+│   ├── train_data/
+│   └── test_data/
+├── dataset_3/
+├── dataset_4/
+└── dataset_5/
+```
+
+trong 6 bộ data, bộ dataset_0 là bộ đơn giản, dùng để test cơ bản. các bộ còn lại có số lượng dữ liệu lớn hơn với các ảnh có điều kiện ảnh khác nhau (ảnh đẹp, ảnh mờ,mức độ ánh sáng khác nhau, có vật thể che một phần khuôn mặt,...) dùng để đánh giá thêm về hiệu quả của mô hình. Trong đó, mỗi bộ bao gồm:
+- ảnh của khoảng 100 người tại train_data và  + ~20 stranger tại test_data (trong tên folder ảnh của người lạ sẽ thêm hậu tố "-stranger")
+- mỗi người trong bộ dữ liệu sẽ có khoảng 8-10 ảnh (test 1-3, train phần còn lại)
+
+Trong `figures/run_full_report.py` có list **`DATASETS_TO_RUN`** (ví dụ `["dataset_1", "dataset_2", ...]`). Bạn có thể **comment** bớt tên dataset để chỉ chạy report cho một vài bộ dữ liệu.
+
+### Cấu trúc Result (`figures/result/`)
+
+Kết quả report được ghi theo từng dataset, mỗi lần chạy tạo một thư mục con với timestamp:
+
+```text
+figures/result/
+├── dataset_1/
+│   └── report_20260303_123456/   # CSV + ảnh confusion 2x2
+├── dataset_2/
+│   └── report_20260303_124000/
+└── ...
+```
+
+Script chạy **lần lượt** từng dataset trong `DATASETS_TO_RUN`; với mỗi dataset tạo một thư mục `result/<dataset_X>/report_YYYYMMDD_HHMMSS/`.
 
 ### Quy trình và logic test (`figures/run_full_report.py`)
 
-Script tạo một thư mục report mới (`report_YYYYMMDD_HHMMSS`) và chạy **5 bước** theo thứ tự:
+Với **mỗi** dataset đã chọn, script chạy **5 bước** theo thứ tự:
 
 1. **STEP 1 — Thu thập thông số hệ thống**  
-   Đếm số identity trong `figures/train_data/` và `figures/test_data/`, đo kích thước model TFLite, CPU/RAM hiện tại, **inference latency** (TFLite, 100 lần) và **preprocessing time** (50 lần). Ghi ra `system_metrics.csv`.
+   Đếm số identity trong `data/<dataset_X>/train_data` và `test_data`, đo kích thước model TFLite, CPU/RAM, **inference latency** (TFLite, 100 lần) và **preprocessing time** (50 lần). Ghi ra `system_metrics.csv`.
 
 2. **STEP 2 — Xây dựng Face Database**  
-   Dùng `accuracy_tools.build_embeddings_from_train_data()`: duyệt từng folder trong `train_data`, trích embedding từng ảnh bằng TFLite (face-recognizer-server), tính **centroid** (vector trung bình, L2-normalize) cho mỗi identity. Database in-memory + ghi ra `database_stats.csv`. Ghi thêm file **temp_face_embeddings.json** trong thư mục report để dùng cho bước 3 và 4.
+   Duyệt `train_data`, trích embedding bằng TFLite (face-recognizer-server), tính **centroid** cho mỗi identity. Ghi `database_stats.csv` và **temp_face_embeddings.json** trong thư mục report.
 
 3. **STEP 3 — Đánh giá trên Train data**  
-   Gọi **FaceRecognizer** (edge-device-pi4/ai-recognition/recognizer.py) với `temp_face_embeddings.json`, model TFLite edge, **threshold cosine 0.45**. Với **mỗi folder** trong `train_data`: chạy `recognize_batch(folder)` (DNN+Haar detection, 160×160, cosine, majority vote) → một nhãn dự đoán cho mỗi folder. Tính accuracy theo số folder đúng, xây confusion matrix. Xuất `train_details_grouped.csv` (theo identity) và **confusion_matrix_train.png** (ảnh).
+   **FaceRecognizer** (edge pipeline, cosine 0.45) chạy `recognize_batch` cho từng folder trong `train_data`. Xuất `train_details_grouped.csv` và **confusion_matrix_2x2_train.png** (ma trận 2×2 Known/Stranger).
 
 4. **STEP 4 — Đánh giá trên Test data**  
-   Cùng pipeline như bước 3: FaceRecognizer trên **test_data**. Mỗi folder test → một kết quả; folder có thể là người trong DB (known) hoặc ngoài DB (unknown). Xuất `test_details.csv` (Actual, Predicted, Distance, Is Correct) và **confusion_matrix_test.png** (có thể có hàng/cột Unknown).
+   Cùng pipeline trên `test_data`. Xuất `test_details.csv` và **confusion_matrix_2x2_test.png** (ma trận 2×2 Known/Stranger).
 
 5. **STEP 5 — Tổng hợp Accuracy**  
-   Ghi `accuracy.csv` với hai dòng: **Train data** (%), **Test data** (% hoặc N/A nếu không có test_data).
+   Ghi `accuracy.csv` (Train data %, Test data %).
 
-**Logic thống nhất:** Cả train và test đều dùng **cùng pipeline nhận diện tại edge** (FaceRecognizer, cosine distance, đánh giá theo **folder** chứ không theo từng ảnh), đảm bảo số liệu báo cáo phản ánh đúng hành vi hệ thống khi chạy trên Pi.
+**Logic thống nhất:** Cả train và test đều dùng **cùng pipeline edge** (FaceRecognizer, cosine, đánh giá theo **folder**).
 
-### Cách đặt tên thư mục
+### Cách đặt tên thư mục report
 
 Định dạng: `report_YYYYMMDD_HHMMSS`  
-Ví dụ: `report_20260302_030440` — ngày 02/03/2026, 03:04:40.
+Ví dụ: `report_20260303_123456` — ngày 03/03/2026, 12:34:56.
 
 ### Cấu trúc file trong mỗi Report
 
 | File | Nội dung |
 | --- | --- |
 | `accuracy.csv` | Tóm tắt độ chính xác **Train data** và **Test data**. |
-| `confusion_matrix_train.csv` | Ma trận nhầm lẫn trên train data (CSV). |
-| `confusion_matrix_train.png` | Ma trận nhầm lẫn trên train data (ảnh PNG). |
-| `confusion_matrix_test.csv` | Ma trận nhầm lẫn trên test data (CSV; có thể có Unknown). |
-| `confusion_matrix_test.png` | Ma trận nhầm lẫn trên test data (ảnh PNG). |
+| `confusion_matrix_2x2_train.png` | Ma trận nhầm lẫn 2×2 (Known/Stranger) trên **train** — TP, TN, FP, FN. |
+| `confusion_matrix_2x2_test.png` | Ma trận nhầm lẫn 2×2 (Known/Stranger) trên **test** — TP, TN, FP, FN. |
 | `train_details_grouped.csv` | Chi tiết độ chính xác theo từng identity (train). |
 | `test_details.csv` | Kết quả từng folder test: Actual, Image, Predicted, Distance, Is Correct. |
 | `system_metrics.csv` | Latency, CPU, RAM, kích thước model, số identity train/test. |
 | `database_stats.csv` | Số identity, embedding dimension. |
 
-Chạy: `python figures/run_full_report.py` để tạo report mới.
+Chạy: `python figures/run_full_report.py` (từ thư mục gốc dự án) để tạo report cho các dataset đã bật trong `DATASETS_TO_RUN`.
 
-### Giải thích Confusion Matrix
+### Giải thích Confusion Matrix 2×2 (Known / Stranger)
 
-Ma trận nhầm lẫn (confusion matrix) được xuất dưới dạng **ảnh PNG** (`confusion_matrix_train.png`, `confusion_matrix_test.png`):
+Ma trận nhầm lẫn được xuất dưới dạng **ảnh PNG** 2×2, gộp theo hai nhóm:
 
-- **Hàng (Actual):** Danh tính thật của đối tượng (tên folder trong train_data hoặc test_data). Hàng cuối có thể là **Unknown** nếu trong test có người không nằm trong database.
-- **Cột (Predicted):** Nhãn do model dự đoán (identity trong DB hoặc **Unknown** nếu không khớp dưới ngưỡng).
-- **Ô (i, j):** Số lần đối tượng thuộc hàng \(i\) được nhận diện là cột \(j\).
-- **Đường chéo chính:** Ô (i, i) = số lần nhận đúng identity \(i\); càng cao càng tốt.
-- **Ngoài đường chéo:** Ô (i, j) với \(i \ne j\) = nhầm lẫn (identity \(i\) bị nhận thành \(j\)). Cột **Unknown** = số lần bị từ chối (không đạt ngưỡng cosine).
+- **Người đã biết (Known):** identity nằm trong database (từ train_data).
+- **Người lạ (Stranger):** identity không trong database hoặc model trả về Unknown.
 
-Cách đọc nhanh: accuracy cao khi phần lớn số lượng nằm trên đường chéo; số lớn ngoài đường chéo hoặc ở cột Unknown cho thấy nhầm lẫn hoặc từ chối sai.
+**Hàng = Actual (thật), Cột = Predicted (dự đoán):**
+
+| | Predicted Known | Predicted Stranger |
+| --- | --- | --- |
+| **Actual Known** | **TP** (True Positive) | **FN** (False Negative) |
+| **Actual Stranger** | **FP** (False Positive) | **TN** (True Negative) |
+
+- **TP:** Người đã biết được nhận đúng.  
+- **TN:** Người lạ được từ chối đúng.  
+- **FP:** Người lạ bị nhận nhầm là Known.  
+- **FN:** Người đã biết bị từ chối (nhận thành Stranger).
+
+Trên ảnh: **TP và TN** dùng cùng một màu (ví dụ xanh — kết quả đúng); **FP** và **FN** mỗi loại một màu khác (ví dụ cam, đỏ) để dễ phân biệt sai lệch.
 
 ---
 
