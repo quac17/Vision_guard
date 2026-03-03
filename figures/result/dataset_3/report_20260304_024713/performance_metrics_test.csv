@@ -1,0 +1,9 @@
+Metric,Value
+TAR (%),94.0
+FAR (%),14.0
+FRR (%),6.0
+EER,0.498
+EER Threshold,0.05
+Threshold used,0.45
+"Recommended threshold (FRR≤10%, FAR≤15%)",0.42
+TAR at recommended (%),94.0

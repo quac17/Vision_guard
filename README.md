@@ -68,13 +68,15 @@ Bài báo trình bày:
 | **Số folder test** | 36 | 120 | Số folder trong `test_data/` (gồm người trong DB và/hoặc người lạ). |
 | **Ảnh/người (train)** | thay đổi | thay đổi | Xem chi tiết trong `result/<dataset_X>/report_.../train_details_grouped.csv`. |
 
-Kết quả từng dataset được xuất riêng trong `figures/result/<dataset_X>/report_YYYYMMDD_HHMMSS/` (accuracy, confusion 2×2, system_metrics, test_details).
+Kết quả từng dataset được xuất riêng trong `figures/result/<dataset_X>/report_YYYYMMDD_HHMMSS/` (accuracy, confusion 2×2, system_metrics, test_details, **performance_metrics**, **roc_curve** CSV + PNG).
 
 ### Đánh giá thực nghiệm
 
 - **Độ chính xác:** Accuracy trên **train data** và **test data** (theo folder), pipeline FaceRecognizer (cosine 0.45); đánh giá từng dataset, ghi trong `accuracy.csv`.
 - **Ma trận nhầm lẫn 2×2:** Phân nhóm **Known** (người trong DB) vs **Stranger** (người lạ); xuất TP, TN, FP, FN dạng ảnh PNG (`confusion_matrix_2x2_train.png`, `confusion_matrix_2x2_test.png`).
-- **Threshold sensitivity:** Ngưỡng so khớp (mặc định 0.45 cho cosine distance) có thể điều chỉnh theo FAR/FRR.
+- **TAR, FAR, FRR:** True Acceptance Rate (tỉ lệ nhận đúng người quen), False Acceptance Rate (tỉ lệ chấp nhận nhầm người lạ), False Rejection Rate (tỉ lệ từ chối nhầm người quen) — xuất trong `performance_metrics_train.csv`, `performance_metrics_test.csv`.
+- **ROC & EER:** Đường cong ROC xuất với **trục hoành = FAR**, trục tung = TAR (vì TAR + FRR = 100% nên TAR theo FRR không mang thêm thông tin). Có **filter FAR ≤ 15%** khi export CSV: ưu tiên tiện dụng nhưng không chấp nhận nhầm quá nhiều người lạ. Trên ảnh đánh dấu EER và điểm khuyến nghị (FRR ≤ 10%, FAR ≤ 15%, TAR tối đa). Dữ liệu: `roc_curve_train.csv`, `roc_curve_test.csv` (chỉ các dòng FAR ≤ 15%); ảnh: `roc_curve_train.png`, `roc_curve_test.png`.
+- **Threshold sensitivity:** Ngưỡng so khớp (mặc định 0.45 cho cosine distance) có thể điều chỉnh theo FAR/FRR; dùng ROC/EER để tối ưu ngưỡng.
 - **Latency:** Inference (ms/frame), preprocessing (ms) — ghi trong `system_metrics.csv` của mỗi report.
 - **Tài nguyên:** CPU (%), RAM (%) — đo khi chạy pipeline, phụ thuộc quy mô dataset.
 - **Lighting robustness:** Face detection DNN + fallback Haar, tiền xử lý CLAHE khi ánh sáng kém.
@@ -85,44 +87,70 @@ Cấu trúc logic, trình bày rõ ràng phù hợp báo cáo khoa học.
 
 ## 📊 Kết quả thực nghiệm (Experimental Results)
 
-Số liệu lấy từ **report** trong `figures/result/` (mỗi dataset có thư mục `report_YYYYMMDD_HHMMSS` chứa CSV và ảnh confusion 2×2). Dưới đây là ví dụ từ **dataset_0** và **dataset_1**.
+Số liệu lấy từ **report** trong `figures/result/` (mỗi dataset có thư mục `report_YYYYMMDD_HHMMSS` chứa CSV và ảnh). Dưới đây là kết quả đánh giá theo **dataset_0**, **dataset_1**, **dataset_3**.
 
 ### 1. Độ chính xác (Accuracy)
 
-| Dataset (ví dụ) | Train data | Test data | Ghi chú |
+| Dataset | Train data | Test data | Ghi chú |
 | :--- | :---: | :---: | :--- |
 | **dataset_0** | **100.0%** | **100.0%** | 33 train, 36 test folder; pipeline FaceRecognizer (cosine 0.45). |
 | **dataset_1** | **91.0%** | **92.0%** | 100 train, 120 test folder; cùng pipeline edge. |
+| **dataset_3** | **89.6%** | **85.6%** | 250 train, 300 test folder; cùng pipeline edge. |
 
 ### 2. Thông số Cơ sở dữ liệu & Model
 
-| Thông số | dataset_0 | dataset_1 | Ý nghĩa |
-| :--- | :---: | :---: | :--- |
-| **Total Identities** | 33 | 100 | Số danh tính trong database embeddings. |
-| **Embedding Dimension** | 512 | 512 | Số chiều vector đặc trưng (MobileFaceNet). |
-| **Input size** | **160×160** | **160×160** | Kích thước ảnh mặt đầu vào model. |
-| **Model Size** | **44.88 MB** | **44.88 MB** | Kích thước file `.tflite` (môi trường đo). |
+| Thông số | dataset_0 | dataset_1 | dataset_3 | Ý nghĩa |
+| :--- | :---: | :---: | :---: | :--- |
+| **Total Identities** | 33 | 100 | 250 | Số danh tính trong database embeddings. |
+| **Embedding Dimension** | 512 | 512 | 512 | Số chiều vector đặc trưng (MobileFaceNet). |
+| **Input size** | **160×160** | **160×160** | **160×160** | Kích thước ảnh mặt đầu vào model. |
+| **Model Size** | **44.88 MB** | **44.88 MB** | **44.88 MB** | Kích thước file `.tflite` (môi trường đo). |
 
 ### 3. Hiệu năng Hệ thống (System Metrics)
 
-| Thông số | dataset_0 | dataset_1 | Ý nghĩa |
-| :--- | :---: | :---: | :--- |
-| **Train Identities** | 33 | 100 | Số folder trong `data/<dataset>/train_data/`. |
-| **Test Identities** | 36 | 120 | Số folder trong `data/<dataset>/test_data/`. |
-| **Inference Latency** | **138.57 ms** | **163.35 ms** | Thời gian trích xuất embedding/frame (TFLite, 100 lần). |
-| **Preprocessing Time** | **3.43 ms** | **7.28 ms** | Tiền xử lý ảnh (gray, blur, resize). |
-| **CPU Usage** | **27.5%** | **43.5%** | Mức sử dụng CPU khi chạy pipeline. |
-| **RAM Usage** | **67.2%** | **80.1%** | Mức sử dụng RAM trong quá trình đo. |
+| Thông số | dataset_0 | dataset_1 | dataset_3 | Ý nghĩa |
+| :--- | :---: | :---: | :---: | :--- |
+| **Train Identities** | 33 | 100 | 250 | Số folder trong `data/<dataset>/train_data/`. |
+| **Test Identities** | 36 | 120 | 300 | Số folder trong `data/<dataset>/test_data/`. |
+| **Inference Latency** | **61.79 ms** | **94.16 ms** | **67.99 ms** | Thời gian trích xuất embedding/frame (TFLite, 100 lần). |
+| **Preprocessing Time** | **1.35 ms** | **2.21 ms** | **2.1 ms** | Tiền xử lý ảnh (gray, blur, resize). |
+| **CPU Usage** | **20.3%** | **12.6%** | **15.0%** | Mức sử dụng CPU khi chạy pipeline. |
+| **RAM Usage** | **62.9%** | **59.9%** | **52.3%** | Mức sử dụng RAM trong quá trình đo. |
 
-### 4. Tóm tắt kết quả (theo mẫu bài báo)
+### 4. Hiệu năng xác thực: TAR, FAR, FRR, ROC, EER
 
-- **Inference:** ~140–165 ms/frame (TFLite trên PC, tùy kích thước dataset); trên Pi có thể tương đương hoặc cao hơn.
+Các chỉ số này đo lường hiệu năng mô hình theo góc độ **bảo mật** (FAR) và **tiện dụng** (TAR, FRR). Kết quả tại ngưỡng **0.45** (cosine distance):
+
+| Dataset | Train TAR / FAR / FRR | Test TAR / FAR / FRR | EER (test) |
+| :--- | :---: | :---: | :---: |
+| **dataset_0** | 100% / 0% / 0% | 100% / 100% / 0% | 0.50 |
+| **dataset_1** | 98% / 0% / 2% | 93% / 10% / 7% | 0.50 |
+| **dataset_3** | 99.2% / 0% / 0.8% | 94% / 14% / 6% | 0.498 |
+
+*(Train: chỉ người trong DB; Test: có cả người lạ — FAR test = tỉ lệ người lạ bị chấp nhận nhầm.)*
+
+| Chỉ số | Ý nghĩa | Mục tiêu | File xuất |
+| :--- | :--- | :--- | :--- |
+| **TAR** (True Acceptance Rate) | Trong 100 lần người trong DB quét mặt, bao nhiêu lần máy nhận đúng? | Càng cao càng tốt (gần 100%). | `performance_metrics_train.csv`, `performance_metrics_test.csv` |
+| **FAR** (False Acceptance Rate) | Trong 100 người lạ, bao nhiêu người bị máy chấp nhận nhầm? | Càng thấp càng tốt (quan trọng cho bảo mật). | Cùng file trên |
+| **FRR** (False Rejection Rate) | Trong 100 lần người trong DB quét mặt, bao nhiêu lần bị từ chối nhầm? | Thấp (đo tính tiện dụng). | Cùng file trên |
+| **ROC** (Receiver Operating Characteristic) | Đường cong **TAR theo FAR** (trục hoành = FAR, trục tung = TAR). Dùng FAR thay vì FRR vì **TAR + FRR = 100%** nên TAR theo FRR không mang thêm thông tin. Mô hình tốt khi đường cong áp sát góc trên bên trái. **Giới hạn FAR ≤ 15%** khi export (CSV và vùng quan tâm): ưu tiên tiện dụng (FRR thấp) nhưng **không được nhận nhầm quá nhiều người lạ** (FAR phải chấp nhận được). Điểm khuyến nghị: FRR ≤ 10%, FAR ≤ 15%, TAR tối đa. | — | `roc_curve_train.png`, `roc_curve_test.png`; dữ liệu: `roc_curve_train.csv`, `roc_curve_test.csv` (chỉ dòng FAR ≤ 15%) |
+| **EER** (Equal Error Rate) | Điểm tại đó FAR = FRR. EER càng thấp, mô hình càng mạnh. | Thấp. | Trong `performance_metrics_train.csv`, `performance_metrics_test.csv` (cột EER, EER Threshold) |
+
+Số liệu được tính tại ngưỡng cosine distance **0.45** (cấu hình trong `run_full_report.py`). File `performance_metrics_*` có thêm **Recommended threshold (FRR≤10%, FAR≤15%)** và **TAR at recommended** khi tồn tại điểm thỏa cả hai ràng buộc. Có thể dùng đường cong ROC (TAR vs FAR) và EER để chọn ngưỡng cân bằng giữa bảo mật và tiện dụng.
+
+**Lý do giới hạn FAR ≤ 15%:** Bài toán điểm danh học sinh ưu tiên **tiện dụng** (học sinh không bị từ chối nhầm — FRR thấp), nhưng đồng thời **không được nhận nhầm quá nhiều người lạ** (FAR phải ở mức chấp nhận được). Filter FAR ≤ 15% khi export ROC đảm bảo chỉ xét vùng vận hành an toàn: vừa đủ tiện dụng, vừa không để lọt quá nhiều người không thuộc danh sách.
+
+### 5. Tóm tắt kết quả (theo mẫu bài báo)
+
+- **Accuracy:** Train 89.6–100%, Test 85.6–100% (dataset_0, dataset_1, dataset_3); pipeline FaceRecognizer (cosine 0.45).
+- **Inference:** ~62–94 ms/frame (TFLite trên PC, 100 lần); trên Pi có thể tương đương hoặc cao hơn.
 - **Attendance verification:** Xác nhận điểm danh trong thời gian cấp giây (< 0.5 s khi dùng multi-frame).
-- **CPU / RAM:** Phụ thuộc quy mô dataset (ví dụ 27–43% CPU, 67–80% RAM).
-- **Model size:** ~45 MB (file đo được); có thể dùng bản nén nhỏ hơn cho Pi.
+- **CPU / RAM:** 12.6–20.3% CPU, 52.3–62.9% RAM (đo trên 3 dataset).
+- **Model size:** ~44.88 MB (file đo được); có thể dùng bản nén nhỏ hơn cho Pi.
 - **DB size:** Nhỏ gọn (file JSON embeddings, 512-d/người).
 
-Hệ thống hoạt động realtime trên embedded device (Raspberry Pi 4). Các report đầy đủ (accuracy, confusion 2×2, system_metrics, test_details) nằm trong `figures/result/<dataset_X>/report_YYYYMMDD_HHMMSS/`.
+Hệ thống hoạt động realtime trên embedded device (Raspberry Pi 4). Các report đầy đủ (accuracy, confusion 2×2, system_metrics, test_details, performance_metrics, roc_curve CSV + PNG) nằm trong `figures/result/<dataset_X>/report_YYYYMMDD_HHMMSS/`.
 
 ---
 

@@ -27,13 +27,15 @@ RESULT_ROOT     = os.path.join(FIGURES_DIR, "result")         # result/dataset_1
 MODEL_PATH      = os.path.join(SERVER_DIR, "models/mobilefacenet.tflite")
 EDGE_MODEL_PATH = os.path.join(FIGURES_DIR, "../edge-device-pi4/ai-recognition/models/mobilefacenet.tflite")
 EDGE_THRESHOLD  = 0.45  # Cosine distance (dùng cho cả train_data và test_data)
+FRR_MAX_FOR_ROC = 0.1  # Ưu tiên tiện dụng: chọn ngưỡng sao cho FRR <= 10%, tối đa hóa TAR (figures.txt)
+FAR_MAX_FOR_ROC = 0.15  # Giới hạn FAR <= 15%: ưu tiên tiện dụng nhưng không nhận nhầm quá nhiều người lạ
 
 # Chọn dataset để chạy report (comment dòng không cần chạy)
 DATASETS_TO_RUN = [
-    "dataset_0",
+    # "dataset_0",
     # "dataset_1",
     # "dataset_2",
-    # "dataset_3",
+    "dataset_3",
     # "dataset_4",
     # "dataset_5",
 ]   
@@ -74,6 +76,114 @@ def _compute_binary_confusion(report_list, known_set):
         else:
             tn += 1
     return tp, tn, fp, fn
+
+
+def _get_genuine_impostor_scores(report_list, known_set):
+    """
+    Từ report (actual, min_distance): tách điểm genuine (người trong DB) và impostor (người lạ).
+    Trả về (genuine_scores, impostor_scores) — mỗi phần tử là khoảng cách cosine.
+    """
+    genuine = []
+    impostor = []
+    for r in report_list:
+        actual = r.get("actual", "")
+        dist = r.get("min_distance", float("inf"))
+        if actual in known_set:
+            genuine.append(float(dist))
+        else:
+            impostor.append(float(dist))
+    return genuine, impostor
+
+
+def _compute_tar_far_frr(genuine_scores, impostor_scores, threshold):
+    """
+    Tại một ngưỡng: TAR = tỉ lệ genuine được chấp nhận (distance < thresh),
+    FAR = tỉ lệ impostor bị chấp nhận nhầm, FRR = 1 - TAR.
+    """
+    n_gen = len(genuine_scores)
+    n_imp = len(impostor_scores)
+    if n_gen == 0:
+        tar = 0.0
+        frr = 0.0
+    else:
+        accept_gen = sum(1 for s in genuine_scores if s < threshold)
+        tar = accept_gen / n_gen
+        frr = 1.0 - tar
+    if n_imp == 0:
+        far = 0.0
+    else:
+        far = sum(1 for s in impostor_scores if s < threshold) / n_imp
+    return tar, far, frr
+
+
+def _compute_roc_and_eer(genuine_scores, impostor_scores, thresholds=None):
+    """
+    Quét ngưỡng, tính TAR/FAR/FRR tại mỗi điểm. Tìm EER (điểm FAR = FRR).
+    Trả về (roc_rows, eer_value, eer_threshold). roc_rows = [(th, TAR, FAR, FRR), ...].
+    """
+    if thresholds is None:
+        thresholds = np.arange(0.05, 0.95, 0.01).tolist()
+    roc_rows = []
+    eer_value = None
+    eer_threshold = None
+    for th in thresholds:
+        tar, far, frr = _compute_tar_far_frr(genuine_scores, impostor_scores, th)
+        roc_rows.append((th, tar, far, frr))
+        if eer_value is None and frr >= far:
+            # EER ≈ điểm giao FAR = FRR; nội suy đơn giản
+            eer_value = (far + frr) / 2.0
+            eer_threshold = th
+    if eer_value is None and roc_rows:
+        eer_value = roc_rows[-1][2]  # FAR cuối
+        eer_threshold = roc_rows[-1][0]
+    return roc_rows, eer_value, eer_threshold
+
+
+def _best_threshold_under_frr_and_far_max(roc_rows, frr_max, far_max):
+    """
+    Điểm khuyến nghị: FRR <= frr_max (tiện dụng), FAR <= far_max (bảo mật), chọn ngưỡng có TAR tốt nhất.
+    Trả về (threshold, tar, far, frr) hoặc None nếu không có điểm thỏa.
+    """
+    candidates = [(r[0], r[1], r[2], r[3]) for r in roc_rows if r[3] <= frr_max and r[2] <= far_max]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda x: x[1])  # max TAR
+
+
+def save_roc_curve_image(path, roc_rows, eer_value, eer_threshold, title="ROC Curve (TAR vs FAR)"):
+    """
+    Vẽ đường cong ROC: trục x = FAR, trục y = TAR (TAR vs FRR vô nghĩa vì TAR + FRR = 100%).
+    Đánh dấu EER và điểm khuyến nghị: FRR <= FRR_MAX, FAR <= FAR_MAX, TAR tối đa. Vạch đứng FAR = FAR_MAX.
+    """
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        far_list = [r[2] for r in roc_rows]
+        tar_list = [r[1] for r in roc_rows]
+        fig, ax = plt.subplots(figsize=(6, 5))
+        ax.plot(far_list, tar_list, "b-", linewidth=2, label="ROC (TAR vs FAR)")
+        if eer_value is not None and eer_threshold is not None:
+            ax.plot(eer_value, 1 - eer_value, "ro", markersize=10, label=f"EER = {eer_value:.3f} (thr≈{eer_threshold:.2f})")
+        best = _best_threshold_under_frr_and_far_max(roc_rows, FRR_MAX_FOR_ROC, FAR_MAX_FOR_ROC)
+        if best is not None:
+            th, tar, far, frr = best
+            ax.plot(far, tar, "g*", markersize=14, label=f"FRR≤{FRR_MAX_FOR_ROC*100:.0f}% FAR≤{FAR_MAX_FOR_ROC*100:.0f}% TAR={tar:.2%} (thr={th:.2f})")
+        ax.axvline(x=FAR_MAX_FOR_ROC, color="gray", linestyle=":", alpha=0.7, label=f"FAR = {FAR_MAX_FOR_ROC*100:.0f}%")
+        ax.plot([0, 1], [0, 1], "k--", alpha=0.5, label="Random")
+        ax.set_xlabel("FAR (False Acceptance Rate)")
+        ax.set_ylabel("TAR (True Acceptance Rate)")
+        ax.set_title(title)
+        ax.legend(loc="lower right", fontsize=8)
+        ax.grid(True, alpha=0.3)
+        ax.set_xlim(-0.02, 1.02)
+        ax.set_ylim(-0.02, 1.02)
+        fig.tight_layout()
+        plt.savefig(path, dpi=150, bbox_inches="tight")
+        plt.close()
+        print(f"  -> Image: {path}")
+    except Exception as e:
+        print(f"  LOI xuat anh ROC: {e}")
 
 
 def save_confusion_matrix_2x2_image(path, tp, tn, fp, fn, title="Confusion Matrix (Known / Stranger)"):
@@ -186,6 +296,32 @@ def run_report_for_paths(train_data_dir, test_data_dir, output_dir):
         tp_tr, tn_tr, fp_tr, fn_tr, title="Confusion Matrix 2x2 — Train (Known / Stranger)"
     )
 
+    # TAR, FAR, FRR, ROC, EER — Train (ROC: trục x = FRR để ưu tiên tiện dụng)
+    gen_tr, imp_tr = _get_genuine_impostor_scores(train_report, known_set)
+    tar_tr, far_tr, frr_tr = _compute_tar_far_frr(gen_tr, imp_tr, EDGE_THRESHOLD)
+    roc_tr, eer_tr, eer_th_tr = _compute_roc_and_eer(gen_tr, imp_tr)
+    best_tr = _best_threshold_under_frr_and_far_max(roc_tr, FRR_MAX_FOR_ROC, FAR_MAX_FOR_ROC)
+    perf_rows_tr = [
+        ["TAR (%)", round(tar_tr * 100, 4)],
+        ["FAR (%)", round(far_tr * 100, 4)],
+        ["FRR (%)", round(frr_tr * 100, 4)],
+        ["EER", round(eer_tr, 4) if eer_tr is not None else "N/A"],
+        ["EER Threshold", round(eer_th_tr, 4) if eer_th_tr is not None else "N/A"],
+        ["Threshold used", EDGE_THRESHOLD],
+    ]
+    if best_tr is not None:
+        perf_rows_tr.append([f"Recommended threshold (FRR≤{FRR_MAX_FOR_ROC*100:.0f}%, FAR≤{FAR_MAX_FOR_ROC*100:.0f}%)", round(best_tr[0], 4)])
+        perf_rows_tr.append(["TAR at recommended (%)", round(best_tr[1] * 100, 4)])
+    save_csv(os.path.join(output_dir, "performance_metrics_train.csv"), perf_rows_tr, ["Metric", "Value"])
+    roc_tr_filtered = [(th, tar, far, frr) for th, tar, far, frr in roc_tr if far <= FAR_MAX_FOR_ROC]
+    save_csv(os.path.join(output_dir, "roc_curve_train.csv"),
+             [[th, round(tar, 4), round(far, 4), round(frr, 4)] for th, tar, far, frr in roc_tr_filtered],
+             ["Threshold", "TAR", "FAR", "FRR"])
+    save_roc_curve_image(
+        os.path.join(output_dir, "roc_curve_train.png"),
+        roc_tr, eer_tr, eer_th_tr, title="ROC Curve — Train (TAR vs FAR)"
+    )
+
     test_acc = 0
     if n_test > 0:
         print("\n[STEP 4] DANH GIA TREN TEST DATA (FaceRecognizer)")
@@ -209,6 +345,31 @@ def run_report_for_paths(train_data_dir, test_data_dir, output_dir):
         save_confusion_matrix_2x2_image(
             os.path.join(output_dir, "confusion_matrix_2x2_test.png"),
             tp_te, tn_te, fp_te, fn_te, title="Confusion Matrix 2x2 — Test (Known / Stranger)"
+        )
+        # TAR, FAR, FRR, ROC, EER — Test (ROC: trục x = FRR)
+        gen_te, imp_te = _get_genuine_impostor_scores(unknown_report, known_set)
+        tar_te, far_te, frr_te = _compute_tar_far_frr(gen_te, imp_te, EDGE_THRESHOLD)
+        roc_te, eer_te, eer_th_te = _compute_roc_and_eer(gen_te, imp_te)
+        best_te = _best_threshold_under_frr_and_far_max(roc_te, FRR_MAX_FOR_ROC, FAR_MAX_FOR_ROC)
+        perf_rows_te = [
+            ["TAR (%)", round(tar_te * 100, 4)],
+            ["FAR (%)", round(far_te * 100, 4)],
+            ["FRR (%)", round(frr_te * 100, 4)],
+            ["EER", round(eer_te, 4) if eer_te is not None else "N/A"],
+            ["EER Threshold", round(eer_th_te, 4) if eer_th_te is not None else "N/A"],
+            ["Threshold used", EDGE_THRESHOLD],
+        ]
+        if best_te is not None:
+            perf_rows_te.append([f"Recommended threshold (FRR≤{FRR_MAX_FOR_ROC*100:.0f}%, FAR≤{FAR_MAX_FOR_ROC*100:.0f}%)", round(best_te[0], 4)])
+            perf_rows_te.append(["TAR at recommended (%)", round(best_te[1] * 100, 4)])
+        save_csv(os.path.join(output_dir, "performance_metrics_test.csv"), perf_rows_te, ["Metric", "Value"])
+        roc_te_filtered = [(th, tar, far, frr) for th, tar, far, frr in roc_te if far <= FAR_MAX_FOR_ROC]
+        save_csv(os.path.join(output_dir, "roc_curve_test.csv"),
+                 [[th, round(tar, 4), round(far, 4), round(frr, 4)] for th, tar, far, frr in roc_te_filtered],
+                 ["Threshold", "TAR", "FAR", "FRR"])
+        save_roc_curve_image(
+            os.path.join(output_dir, "roc_curve_test.png"),
+            roc_te, eer_te, eer_th_te, title="ROC Curve — Test (TAR vs FAR)"
         )
 
     accuracy_rows = [

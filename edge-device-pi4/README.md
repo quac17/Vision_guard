@@ -12,19 +12,25 @@ Phân vùng chạy trên **Raspberry Pi 4**: điều khiển camera, chụp ản
 
 ```text
 edge-device-pi4/
-├── hardware-control/        # Camera, capture, tiền xử lý, trigger (Space/GPIO)
-│   ├── camera_utils.py      # Capture ảnh, listener phím Space
-│   ├── image_processor.py   # Preprocess (blur, resize, normalize)
-│   └── main.py
-└── ai-recognition/          # Nhận diện & database local
-    ├── recognizer.py        # FaceRecognizer: TFLite + matching + API
-    ├── local_db/
-    │   └── face_embeddings.json
-    ├── models/
-    │   ├── mobilefacenet.tflite
-    │   ├── deploy.prototxt
-    │   └── res10_300x300_ssd_iter_140000.caffemodel  # OpenCV DNN face detector
-    └── run_test.py          # Script đánh giá độ chính xác (test_data)
+├── hardware-control/           # Camera, capture, tiền xử lý, trigger (Space/GPIO)
+│   ├── camera_utils.py         # Capture ảnh, listener phím Space, gọi recognizer
+│   ├── image_processor.py      # Preprocess (blur, CLAHE, resize, normalize)
+│   ├── main.py                 # Entry: capture_images(RAW_DIR, PROCESSED_DIR)
+│   ├── dataset/                # Tạo khi chạy (raw/, processed/)
+│   │   ├── raw/                # Ảnh gốc sau khi chụp
+│   │   └── processed/          # Ảnh đã tiền xử lý → recognizer đọc từ đây
+│   └── sound/                  # Tùy chọn: on_bus.mp3, off_bus.mp3, reconize_fail.mp3
+├── ai-recognition/              # Nhận diện & database local
+│   ├── recognizer.py           # FaceRecognizer: DNN/Haar detection, TFLite, matching, API
+│   ├── local_db/
+│   │   └── face_embeddings.json # Copy từ face-recognizer-server
+│   ├── models/
+│   │   ├── mobilefacenet.tflite
+│   │   ├── deploy.prototxt
+│   │   └── res10_300x300_ssd_iter_140000.caffemodel  # OpenCV DNN face detector
+│   ├── run_test.py             # Đánh giá độ chính xác trên test_data (batch)
+│   └── architechture.txt       # Mô tả luồng dữ liệu
+└── test_reports/               # Output của run_test.py (accuracy, metrics CSV)
 ```
 
 ## Giải thuật chi tiết
@@ -32,12 +38,13 @@ edge-device-pi4/
 ### 1. Phần cứng & Trigger (`hardware-control`)
 
 - **Camera:** Chụp ảnh qua OpenCV (hoặc Pi Camera).
-- **Trigger:** Nhấn phím **Space** trên terminal (hoặc GPIO nút bấm) để bắt đầu một đợt điểm danh.
+- **Trigger:** Nhấn phím **Space** trên terminal (hoặc GPIO `BUTTON_PIN = 17`) để bắt đầu một đợt điểm danh.
 - **Capture:** Chụp liên tục **3–5 frame** trong một đợt để dùng cho multi-frame verification.
+- **Âm thanh (tùy chọn):** Pygame phát `on_bus.mp3` / `off_bus.mp3` / `reconize_fail.mp3` theo kết quả và `edge_mode`.
 
 ### 2. Phát hiện khuôn mặt (`recognizer.py`)
 
-- **Ưu tiên:** OpenCV **DNN** face detector (Caffe: `deploy.prototxt` + `res10_300x300_ssd_iter_140000.caffemodel`) với ngưỡng confidence linh hoạt (0.35–0.5).
+- **Ưu tiên:** OpenCV **DNN** face detector (Caffe: `deploy.prototxt` + `res10_300x300_ssd_iter_140000.caffemodel`) với ngưỡng confidence **0.5** (fallback **0.35** khi không có face ≥ 0.5).
 - **Fallback:** **Haar Cascade** mặt chính diện.
 - **Ánh sáng kém:** Retry với ảnh đã tăng tương phản **CLAHE** (kênh L trong LAB) để cải thiện detection.
 
@@ -46,18 +53,18 @@ edge-device-pi4/
 - **Alignment:** Căn chỉnh theo hai mắt (rotation) giống server.
 - **Resize:** 160×160 (theo input model), RGB.
 - **Chuẩn hóa:** `(pixel - 127.5) / 127.5` (đồng bộ với face-recognizer-server).
-- **Khử nhiễu:** Gaussian Blur (3×3) có thể áp dụng trước resize (tùy pipeline).
+- **Khử nhiễu:** Gaussian Blur; CLAHE khi cần (trong pipeline tiền xử lý).
 
 ### 4. Trích xuất embedding (TFLite)
 
 - **Model:** `mobilefacenet.tflite` (MobileFaceNet, 512-d).
-- **Input:** Ảnh 160×160 đã chuẩn hóa (NHWC hoặc NCHW tùy model).
+- **Input:** Ảnh 160×160 đã chuẩn hóa.
 - **Output:** Vector 512 chiều, **L2-normalize** trước khi so khớp.
 
 ### 5. So khớp danh tính (Matching)
 
-- **Độ đo:** **Cosine distance** = `1 - cosine_similarity` (với vector đã L2-normalize, tương đương về mặt góc với Euclidean trên sphere).
-- **Threshold:** Mặc định **0.45** (có thể chỉnh theo FAR/FRR và điều kiện ánh sáng).
+- **Độ đo:** **Cosine distance** = `1 - cosine_similarity` (vector đã L2-normalize).
+- **Threshold:** Mặc định **0.45** (trong `recognizer.py`; `hardware-control` hiện không truyền threshold — dùng mặc định).
 - **Multi-frame verification (strict):**
   - Với mỗi identity trong DB: đếm số frame có `distance < threshold`.
   - Chỉ chấp nhận identity khi **quá bán** frame (ví dụ 2/3 hoặc 3/5) nằm dưới ngưỡng với **cùng một** người.
@@ -65,25 +72,32 @@ edge-device-pi4/
 
 ### 6. Gửi điểm danh lên backend
 
-- Sau khi xác nhận danh tính: gọi `POST /edge/attendance` với `student_code` (trích từ tên trong DB, ví dụ `s1_SV001` → `SV001`), `status`, `attendance_time`.
+- Sau khi xác nhận danh tính: gọi `POST /edge/attendance` với `student_code` (trích từ tên trong DB, ví dụ `s1_SV001` → `SV001`), `status` (= `edge_mode`: `on_bus` / `off_bus`), `attendance_time`.
+- **API Base URL:** Biến môi trường `API_BASE_URL` (mặc định trong code nếu không set).
 
-## Thông số kỹ thuật (từ báo cáo)
+## Thông số kỹ thuật (đồng bộ với report trong `figures/result/`)
 
 | Thông số | Giá trị |
 | --- | --- |
-| Độ chính xác Edge Phase (test) | 96.92% |
-| Inference latency | < 80 ms/frame (PC ~40 ms; Pi có thể cao hơn nhưng realtime) |
-| Preprocessing | ~1.39 ms |
-| Model size | ~0.82 MB |
-| Threshold (cosine distance) | 0.45 (điều chỉnh được) |
+| **Độ chính xác (test)** | 85.6–100% (tùy dataset; pipeline FaceRecognizer, cosine 0.45) |
+| **Inference latency (PC)** | ~62–94 ms/frame (TFLite, 100 lần); trên Pi có thể cao hơn nhưng vẫn realtime |
+| **Preprocessing** | ~1.35–2.21 ms |
+| **Model size** | ~44.88 MB (mobilefacenet.tflite) |
+| **Threshold (cosine distance)** | 0.45 (trong `recognizer.py`; có thể chỉnh theo FAR/FRR) |
 
 ## Cách chạy
 
-1. Copy `face_embeddings.json` từ `face-recognizer-server` vào `ai-recognition/local_db/`.
-2. Cài đặt: `tflite-runtime` (hoặc `tensorflow`), `opencv-python`, `requests`.
-3. Chạy: `python hardware-control/main.py` (từ thư mục gốc `edge-device-pi4` hoặc theo cấu hình trong code).
-4. Nhấn **Space** khi cần điểm danh; kết quả in ra và gửi lên backend (nếu cấu hình `API_BASE_URL`).
+1. **Chuẩn bị database:** Copy `face_embeddings.json` từ `face-recognizer-server` vào `ai-recognition/local_db/`.
+2. **Model & DNN:** Đặt `mobilefacenet.tflite` trong `ai-recognition/models/`. File `deploy.prototxt` và `res10_300x300_ssd_iter_140000.caffemodel` có thể được tải tự động lần đầu (hoặc copy sẵn).
+3. **Cài đặt:**  
+   `pip install tflite-runtime opencv-python numpy requests`  
+   Tùy chọn âm thanh: `pip install pygame`. Trên Pi có thể dùng `tflite-runtime` thay cho `tensorflow`.
+4. **Chạy (từ thư mục `edge-device-pi4`):**  
+   `python hardware-control/main.py`  
+   Đường dẫn ảnh trong code: `hardware-control/dataset/raw`, `hardware-control/dataset/processed` (tạo tự động khi cần).
+5. **Nhấn Space** khi cần điểm danh; kết quả in ra và gửi lên backend nếu `API_BASE_URL` được cấu hình (env hoặc mặc định trong `recognizer.py`).
 
-## Đánh giá độ chính xác (test)
+## Đánh giá độ chính xác
 
-- Script `ai-recognition/run_test.py` đọc ảnh từ thư mục test, chạy recognizer và xuất kết quả (Actual, Predicted, Distance, Is Correct) — tương tự dữ liệu trong `figures/report_*/test_details.csv`.
+- **Tại edge:** Script `ai-recognition/run_test.py` đọc ảnh từ thư mục test, chạy FaceRecognizer và xuất kết quả (Actual, Predicted, Distance, Is Correct); có thể lưu vào `test_reports/`.
+- **Báo cáo đầy đủ (PC):** Dùng `figures/run_full_report.py` để đánh giá theo nhiều dataset (accuracy, confusion 2×2, TAR/FAR/FRR, ROC, EER). Kết quả trong `figures/result/<dataset_X>/report_YYYYMMDD_HHMMSS/`.
