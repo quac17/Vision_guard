@@ -27,23 +27,23 @@ Sơ đồ kiến trúc tổng quan:
 
 ```mermaid
 flowchart LR
-  subgraph Offline["📦 Chuẩn bị (Offline)"]
-    A[Ảnh khuôn mặt] --> B[PC Server\nface-recognizer-server]
+  subgraph Offline["📦 Setup (Offline)"]
+    A[Face images] --> B[PC Server\nface-recognizer-server]
     B --> C[face_embeddings.json]
     C --> D[Edge\nlocal_db]
   end
 
   subgraph Edge["🍓 Edge (Raspberry Pi 4)"]
-    E[Camera] --> F[Chụp ảnh]
-    F --> G[Tiền xử lý\n+ TFLite]
-    G --> H[So khớp\ncosine + DB]
+    E[Camera] --> F[Capture]
+    F --> G[Preprocess\n+ TFLite]
+    G --> H[Match\ncosine + DB]
     D --> H
     H --> I[student_code\nstatus, time]
   end
 
   subgraph Cloud["☁️ Backend & Web"]
     I --> J[Backend\nFastAPI]
-    J --> K[Lưu điểm danh\n+ Thông báo]
+    J --> K[Store attendance\n+ Notify]
     L[Frontend\nDashboard] <--> J
   end
 
